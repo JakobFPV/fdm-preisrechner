@@ -1,89 +1,107 @@
-// Formatting and parsing helpers for the German user interface.
+// Number, money and duration formatting for the user interface, in German or English.
+// `lang` is 'de' or 'en' (default 'de').
 
-const LOCALE = 'de-DE';
-const numberFormats = new Map();
+import { LOCALES } from './i18n.js';
 
-function numberFormat(minDigits, maxDigits, useGrouping = true) {
-  const key = `${minDigits}|${maxDigits}|${useGrouping}`;
-  let format = numberFormats.get(key);
+const formats = new Map();
+
+function cached(key, create) {
+  let format = formats.get(key);
   if (!format) {
-    format = new Intl.NumberFormat(LOCALE, {
-      minimumFractionDigits: minDigits,
-      maximumFractionDigits: maxDigits,
-      useGrouping,
-    });
-    numberFormats.set(key, format);
+    format = create();
+    formats.set(key, format);
   }
   return format;
 }
 
-const euroFormat = new Intl.NumberFormat(LOCALE, { style: 'currency', currency: 'EUR' });
+const localeOf = (lang) => LOCALES[lang] ?? LOCALES.de;
 
-/** Fixed number of decimals with German separators: 1234.5 → "1.234,50". */
-export function formatNumber(value, digits = 2) {
-  return numberFormat(digits, digits).format(value);
+function numberFormat(lang, minDigits, maxDigits, useGrouping = true) {
+  const locale = localeOf(lang);
+  return cached(`n|${locale}|${minDigits}|${maxDigits}|${useGrouping}`, () => new Intl.NumberFormat(locale, {
+    minimumFractionDigits: minDigits,
+    maximumFractionDigits: maxDigits,
+    useGrouping,
+  }));
 }
 
-/** Up to `maxDigits` decimals without trailing zeros: 0.20 → "0,2". */
-export function formatCompact(value, maxDigits = 2) {
-  return numberFormat(0, maxDigits).format(value);
+function euroFormat(lang, digits = 2) {
+  const locale = localeOf(lang);
+  return cached(`e|${locale}|${digits}`, () => new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }));
+}
+
+/** Fixed number of decimals: 1234.5 → "1.234,50" (de) / "1,234.50" (en). */
+export function formatNumber(value, digits = 2, lang = 'de') {
+  return numberFormat(lang, digits, digits).format(value);
+}
+
+/** Up to `maxDigits` decimals without trailing zeros: 0.20 → "0,2" / "0.2". */
+export function formatCompact(value, maxDigits = 2, lang = 'de') {
+  return numberFormat(lang, 0, maxDigits).format(value);
 }
 
 /** Value for an input field: no thousands separators, up to 4 decimals. */
-export function formatInputNumber(value) {
-  return Number.isFinite(value) ? numberFormat(0, 4, false).format(value) : '';
+export function formatInputNumber(value, lang = 'de') {
+  return Number.isFinite(value) ? numberFormat(lang, 0, 4, false).format(value) : '';
 }
 
-/** Euro amount from whole cents: 1234 → "12,34 €". */
-export function formatEuroCents(cents) {
-  return euroFormat.format(cents / 100);
+/** Euro amount from whole cents: 1234 → "12,34 €" / "€12.34". */
+export function formatEuroCents(cents, lang = 'de') {
+  return euroFormat(lang).format(cents / 100);
 }
 
-/** Euro amount: 0.35 → "0,35 €". */
-export function formatEuro(euros) {
-  return euroFormat.format(euros);
+/** Euro amount: 0.35 → "0,35 €" / "€0.35". */
+export function formatEuro(euros, lang = 'de') {
+  return euroFormat(lang).format(euros);
 }
-
-const preciseEuroFormat = new Intl.NumberFormat(LOCALE, {
-  style: 'currency',
-  currency: 'EUR',
-  minimumFractionDigits: 4,
-  maximumFractionDigits: 4,
-});
 
 /**
  * Euro amount with four decimals, for the calculation steps: 0.07023 → "0,0702 €".
  * `truncate` cuts instead of rounding, so a value just below half a cent (1.30496)
  * never shows as "1,3050 €" next to the rounded price "1,30 €".
  */
-export function formatEuroPrecise(euros, { truncate = false } = {}) {
+export function formatEuroPrecise(euros, { truncate = false, lang = 'de' } = {}) {
   const value = truncate ? Math.floor(Number((euros * 1e4).toPrecision(12))) / 1e4 : euros;
-  return preciseEuroFormat.format(value);
+  return euroFormat(lang, 4).format(value);
 }
 
 /** Duration in hours → "2 h 05 min", "45 min" or "< 1 min". */
-export function formatDuration(hours) {
+export function formatDuration(hours, lang = 'de') {
   if (!Number.isFinite(hours)) return '–';
   const totalMinutes = Math.round(hours * 60);
   if (totalMinutes < 1) return '< 1 min';
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   if (h === 0) return `${m} min`;
-  return `${numberFormat(0, 0).format(h)} h ${String(m).padStart(2, '0')} min`;
+  return `${numberFormat(lang, 0, 0).format(h)} h ${String(m).padStart(2, '0')} min`;
 }
 
 /**
- * Parses a number typed with a decimal comma or point:
- * "0,2", "0.2", " 24,99 ", "1.234,5" → number. Anything else → NaN.
- * Numbers are passed through unchanged.
+ * Parses a typed number. Numbers are passed through unchanged; anything unreadable gives NaN.
+ *   de: "0,2", "0.2", " 24,99 ", "1.234,5"
+ *   en: "0.2", "0,2", "1,234.5", "1,000"
  */
-export function parseDecimal(input) {
+export function parseDecimal(input, lang = 'de') {
   if (typeof input === 'number') return input;
   if (typeof input !== 'string') return Number.NaN;
   let text = input.replace(/[\s  ]/g, '');
-  if (text.includes(',') && text.includes('.')) {
-    // German notation with thousands separators: "1.234,5"
-    text = text.replace(/\./g, '').replace(',', '.');
+  const hasComma = text.includes(',');
+  const hasDot = text.includes('.');
+  if (lang === 'en') {
+    if (hasComma && hasDot) {
+      text = text.replace(/,/g, ''); // "1,234.5"
+    } else if (/^[+-]?[1-9]\d{0,2}(,\d{3})+$/.test(text)) {
+      text = text.replace(/,/g, ''); // "1,000"
+    } else {
+      text = text.replace(',', '.'); // "0,2" typed with a decimal comma
+    }
+  } else if (hasComma && hasDot) {
+    text = text.replace(/\./g, '').replace(',', '.'); // "1.234,5"
   } else {
     text = text.replace(',', '.');
   }

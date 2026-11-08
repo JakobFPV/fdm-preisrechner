@@ -1,6 +1,7 @@
 // Reading models: volume, surface, size, and clear errors for broken or unsupported files.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { t } from '../public/lib/i18n.js';
 import { analyzeModelFile, ModelError } from '../public/lib/mesh.js';
 import {
   asciiStl,
@@ -45,7 +46,7 @@ describe('STL', () => {
   it('reads a binary STL', async () => {
     const info = await analyzeModelFile(binaryStl(cube), 'wuerfel.stl');
     assertCube(info);
-    assert.equal(info.format, 'STL (binär)');
+    assert.equal(info.format, 'stl-binary');
     assert.equal(info.triangleCount, 12);
     assert.deepEqual(info.warnings, []);
   });
@@ -53,7 +54,7 @@ describe('STL', () => {
   it('reads an ASCII STL', async () => {
     const info = await analyzeModelFile(Buffer.from(asciiStl(cube)), 'wuerfel.stl');
     assertCube(info);
-    assert.equal(info.format, 'STL (ASCII)');
+    assert.equal(info.format, 'stl-ascii');
   });
 
   it('reads ASCII STL with Windows line endings and upper-case keywords', async () => {
@@ -63,7 +64,7 @@ describe('STL', () => {
 
   it('treats a binary STL whose header starts with "solid" as binary', async () => {
     const info = await analyzeModelFile(binaryStl(cube, 'solid exported by some CAD'), 'wuerfel.stl');
-    assert.equal(info.format, 'STL (binär)');
+    assert.equal(info.format, 'stl-binary');
     assertCube(info);
   });
 
@@ -98,13 +99,14 @@ describe('STL', () => {
   it('warns when the mesh has holes', async () => {
     const open = cube.slice(2); // bottom face missing
     const info = await analyzeModelFile(binaryStl(open), 'offen.stl');
-    assert.equal(info.warnings.length, 1);
-    assert.match(info.warnings[0], /nicht geschlossen/);
+    assert.deepEqual(info.warnings.map((w) => w.code), ['warning.openMesh']);
+    assert.match(t('de', info.warnings[0].code), /nicht geschlossen/);
+    assert.match(t('en', info.warnings[0].code), /not closed/);
   });
 
   it('warns when the model is suspiciously small (exported in meters)', async () => {
     const info = await analyzeModelFile(binaryStl(boxTriangles(0.02, 0.02, 0.02)), 'meter.stl');
-    assert.match(info.warnings.join(' '), /kleiner als 1 mm/);
+    assert.deepEqual(info.warnings.map((w) => w.code), ['warning.tiny']);
   });
 
   it('rejects a truncated binary STL with the numbers in the message', async () => {
@@ -155,7 +157,7 @@ describe('OBJ', () => {
   it('reads quads with shared vertices', async () => {
     const info = await analyzeModelFile(Buffer.from(boxObj(20, 20, 20)), 'wuerfel.obj');
     assertCube(info);
-    assert.equal(info.format, 'OBJ');
+    assert.equal(info.format, 'obj');
     assert.equal(info.triangleCount, 12);
   });
 
@@ -183,7 +185,7 @@ describe('3MF', () => {
   it('reads a compressed 3MF', async () => {
     const info = await analyzeModelFile(simple3mf(boxMeshXml(20, 20, 20)), 'wuerfel.3mf');
     assertCube(info);
-    assert.equal(info.format, '3MF');
+    assert.equal(info.format, '3mf');
     assert.equal(info.objectCount, 1);
   });
 
@@ -248,7 +250,8 @@ describe('3MF', () => {
     const info = await analyzeModelFile(make3mf(xml), 'zwei.3mf');
     near(info.volumeCm3, 9);
     assert.equal(info.objectCount, 2);
-    assert.match(info.warnings.join(' '), /2 Objekte/);
+    assert.deepEqual(info.warnings, [{ code: 'warning.multipleObjects', params: { count: 2 } }]);
+    assert.match(t('de', 'warning.multipleObjects', info.warnings[0].params), /2 Objekte/);
   });
 
   it('skips items that are marked as not printable', async () => {

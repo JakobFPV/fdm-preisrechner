@@ -1,6 +1,7 @@
 #!/bin/zsh -l
+# Double-click (macOS): starts the FDM price calculator and opens it in the browser.
 # Doppelklick (macOS): startet den FDM-Preisrechner und öffnet ihn im Browser.
-# Beenden: dieses Terminalfenster schließen oder Ctrl+C drücken.
+# Stop / Beenden: close this Terminal window or press Ctrl+C.
 
 cd "${0:A:h}" || exit 1
 
@@ -15,8 +16,9 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "Node.js wurde nicht gefunden. Bitte installieren: https://nodejs.org"
-  read -k 1 "?Taste drücken zum Schließen … "
+  echo "Node.js not found – please install it from https://nodejs.org"
+  echo "Node.js wurde nicht gefunden – bitte von https://nodejs.org installieren."
+  read -k 1 "?Press any key to close / Taste drücken zum Schließen … "
   exit 1
 fi
 

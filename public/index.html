@@ -9,24 +9,31 @@
   <link rel="stylesheet" href="styles.css">
   <script type="module" src="app.js"></script>
 </head>
+<!-- Texts are translated by app.js from public/lib/i18n.js (data-i18n*, German below as fallback). -->
 <body>
   <header class="topbar">
     <div class="topbar-inner">
       <h1 class="brand">
         <img src="favicon.svg" alt="" width="28" height="28">
-        <span>FDM-Preisrechner</span>
+        <span data-i18n="app.title">FDM-Preisrechner</span>
       </h1>
-      <button type="button" class="btn btn-ghost" id="settings-shortcut" aria-controls="settings-details">
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
-        <span>Grundeinstellungen</span>
-      </button>
+      <div class="topbar-actions">
+        <div class="lang-switch" role="group" aria-label="Sprache" data-i18n-attr="aria-label:language.label">
+          <button type="button" class="lang-option" data-lang="de" aria-pressed="true" title="Deutsch" lang="de">DE</button>
+          <button type="button" class="lang-option" data-lang="en" aria-pressed="false" title="English" lang="en">EN</button>
+        </div>
+        <button type="button" class="btn btn-ghost" id="settings-shortcut" aria-controls="settings-details">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+          <span data-i18n="settings.shortcut">Grundeinstellungen</span>
+        </button>
+      </div>
     </div>
   </header>
 
   <div class="page">
     <p class="boot-message" id="boot-message">
-      Der Preisrechner lädt nicht? Starte ihn im Projektordner mit <code>npm start</code>
-      und öffne dann <code>http://localhost:3141</code>.
+      Der Preisrechner lädt nicht? Starte ihn im Projektordner mit <code>npm start</code> und öffne <code>http://localhost:3141</code>.<br>
+      Not loading? Start it in the project folder with <code>npm start</code> and open <code>http://localhost:3141</code>.
     </p>
     <div class="banner banner-error" id="app-error" role="alert" hidden></div>
     <div class="banner banner-warning" id="app-warnings" role="status" hidden></div>
@@ -36,17 +43,17 @@
         <!-- Per-print settings: change with every print -->
         <section class="panel job" aria-labelledby="job-heading">
           <div class="panel-header">
-            <h2 id="job-heading">Aktueller Druck</h2>
-            <p>Gilt für diesen Druck und wird als Startwert für den nächsten gemerkt.</p>
+            <h2 id="job-heading" data-i18n="job.title">Aktueller Druck</h2>
+            <p data-i18n="job.subtitle">Gilt für diesen Druck und wird als Startwert für den nächsten gemerkt.</p>
           </div>
 
           <div class="step">
-            <h3 class="step-title"><span class="step-number" aria-hidden="true">1</span>Modell</h3>
+            <h3 class="step-title"><span class="step-number" aria-hidden="true">1</span><span data-i18n="step.model">Modell</span></h3>
             <input type="file" id="file-input" accept=".stl,.3mf,.obj" class="visually-hidden" tabindex="-1" aria-hidden="true">
             <button type="button" class="dropzone" id="dropzone">
               <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 14v4.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14"/></svg>
               <span class="dropzone-title" id="dropzone-title"><strong>Modell hierher ziehen</strong> oder klicken zum Auswählen</span>
-              <span class="dropzone-hint">STL, 3MF oder OBJ · Maße in Millimetern</span>
+              <span class="dropzone-hint" data-i18n="dropzone.hint">STL, 3MF oder OBJ · Maße in Millimetern</span>
             </button>
             <p class="model-loading" id="model-loading" role="status" hidden></p>
             <div class="alert alert-error" id="model-error" role="alert" hidden></div>
@@ -56,25 +63,25 @@
                 <span class="badge" id="model-format"></span>
               </div>
               <dl class="model-stats">
-                <div><dt>Abmessungen (X × Y × Z)</dt><dd id="model-size"></dd></div>
-                <div><dt>Volumen</dt><dd id="model-volume"></dd></div>
-                <div><dt>Oberfläche</dt><dd id="model-area"></dd></div>
-                <div><dt>Dreiecke</dt><dd id="model-triangles"></dd></div>
+                <div><dt data-i18n="model.size">Abmessungen (X × Y × Z)</dt><dd id="model-size"></dd></div>
+                <div><dt data-i18n="model.volume">Volumen</dt><dd id="model-volume"></dd></div>
+                <div><dt data-i18n="model.area">Oberfläche</dt><dd id="model-area"></dd></div>
+                <div><dt data-i18n="model.triangles">Dreiecke</dt><dd id="model-triangles"></dd></div>
               </dl>
               <ul class="notice-list" id="model-warnings" hidden></ul>
             </div>
           </div>
 
           <div class="step">
-            <h3 class="step-title"><span class="step-number" aria-hidden="true">2</span>Drucker &amp; Material</h3>
+            <h3 class="step-title"><span class="step-number" aria-hidden="true">2</span><span data-i18n="step.printerMaterial">Drucker &amp; Material</span></h3>
             <div class="field-grid">
               <div class="field">
-                <label for="printer-select">Drucker</label>
+                <label for="printer-select" data-i18n="label.printer">Drucker</label>
                 <select id="printer-select" aria-describedby="printer-hint"></select>
                 <p class="field-hint" id="printer-hint"></p>
               </div>
               <div class="field">
-                <label for="material-select">Material</label>
+                <label for="material-select" data-i18n="label.material">Material</label>
                 <select id="material-select" aria-describedby="material-hint"></select>
                 <p class="field-hint" id="material-hint"></p>
               </div>
@@ -82,11 +89,11 @@
           </div>
 
           <div class="step">
-            <h3 class="step-title"><span class="step-number" aria-hidden="true">3</span>Druckeinstellungen</h3>
+            <h3 class="step-title"><span class="step-number" aria-hidden="true">3</span><span data-i18n="step.printSettings">Druckeinstellungen</span></h3>
             <div class="field">
-              <label for="layer-height">Schichthöhe</label>
+              <label for="layer-height" data-i18n="label.layerHeight">Schichthöhe</label>
               <div class="control-row">
-                <div class="chips" id="layer-chips" role="group" aria-label="Schichthöhe schnell wählen">
+                <div class="chips" id="layer-chips" role="group" aria-label="Schichthöhe schnell wählen" data-i18n-attr="aria-label:aria.layerChips">
                   <button type="button" class="chip" data-value="0.08">0,08</button>
                   <button type="button" class="chip" data-value="0.12">0,12</button>
                   <button type="button" class="chip" data-value="0.16">0,16</button>
@@ -102,9 +109,9 @@
               <p class="field-error" id="layer-height-error"></p>
             </div>
             <div class="field">
-              <label for="infill">Füllung (Infill)</label>
+              <label for="infill" data-i18n="label.infill">Füllung (Infill)</label>
               <div class="control-row">
-                <input type="range" id="infill-range" min="0" max="100" step="1" aria-label="Füllung in Prozent">
+                <input type="range" id="infill-range" min="0" max="100" step="1" aria-label="Füllung in Prozent" data-i18n-attr="aria-label:aria.infillRange">
                 <div class="input-unit input-narrow">
                   <input id="infill" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="infill-error">
                   <span class="unit">%</span>
@@ -116,37 +123,37 @@
               <label class="switch">
                 <input type="checkbox" id="support" role="switch">
                 <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
-                <span class="switch-label">Stützstrukturen</span>
+                <span class="switch-label" data-i18n="label.support">Stützstrukturen</span>
                 <span class="switch-hint" id="support-hint"></span>
               </label>
             </div>
           </div>
 
           <div class="step">
-            <h3 class="step-title"><span class="step-number" aria-hidden="true">4</span>Menge &amp; Arbeitszeit</h3>
+            <h3 class="step-title"><span class="step-number" aria-hidden="true">4</span><span data-i18n="step.quantity">Menge &amp; Arbeitszeit</span></h3>
             <div class="field-grid job-grid">
               <div class="field">
-                <label for="object-count">Stückzahl</label>
+                <label for="object-count" data-i18n="label.objectCount">Stückzahl</label>
                 <div class="stepper">
-                  <button type="button" class="stepper-btn" data-target="object-count" data-delta="-1" aria-label="Ein Stück weniger">−</button>
+                  <button type="button" class="stepper-btn" data-target="object-count" data-delta="-1" aria-label="Ein Stück weniger" data-i18n-attr="aria-label:aria.pieceLess">−</button>
                   <input id="object-count" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="object-count-error">
-                  <button type="button" class="stepper-btn" data-target="object-count" data-delta="1" aria-label="Ein Stück mehr">+</button>
+                  <button type="button" class="stepper-btn" data-target="object-count" data-delta="1" aria-label="Ein Stück mehr" data-i18n-attr="aria-label:aria.pieceMore">+</button>
                 </div>
                 <p class="field-error" id="object-count-error"></p>
               </div>
               <div class="field">
-                <label for="plate-count">Druckplatten</label>
+                <label for="plate-count" data-i18n="label.plateCount">Druckplatten</label>
                 <div class="stepper">
-                  <button type="button" class="stepper-btn" data-target="plate-count" data-delta="-1" aria-label="Eine Platte weniger">−</button>
+                  <button type="button" class="stepper-btn" data-target="plate-count" data-delta="-1" aria-label="Eine Platte weniger" data-i18n-attr="aria-label:aria.plateLess">−</button>
                   <input id="plate-count" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="plate-count-error">
-                  <button type="button" class="stepper-btn" data-target="plate-count" data-delta="1" aria-label="Eine Platte mehr">+</button>
+                  <button type="button" class="stepper-btn" data-target="plate-count" data-delta="1" aria-label="Eine Platte mehr" data-i18n-attr="aria-label:aria.plateMore">+</button>
                 </div>
                 <p class="field-error" id="plate-count-error"></p>
               </div>
             </div>
-            <p class="field-hint">Gilt für das aktuelle Modell – ein neues Modell beginnt wieder mit 1 Stück auf 1 Platte.</p>
+            <p class="field-hint" data-i18n="job.quantityHint">Gilt für das aktuelle Modell – ein neues Modell beginnt wieder mit 1 Stück auf 1 Platte.</p>
             <div class="labour-box" id="labour-box" aria-live="polite">
-              <span class="labour-title">Arbeitszeit (automatisch)</span>
+              <span class="labour-title" data-i18n="labour.title">Arbeitszeit (automatisch)</span>
               <span class="labour-total" id="labour-total"></span>
               <span class="labour-detail" id="labour-detail"></span>
             </div>
@@ -159,8 +166,8 @@
             <summary>
               <svg class="summary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
               <span class="summary-text">
-                <span class="summary-title" id="settings-heading">Grundeinstellungen</span>
-                <span class="summary-sub">Drucker, Materialien und Kosten – selten geändert, dauerhaft gespeichert</span>
+                <span class="summary-title" id="settings-heading" data-i18n="settings.title">Grundeinstellungen</span>
+                <span class="summary-sub" data-i18n="settings.subtitle">Drucker, Materialien und Kosten – selten geändert, dauerhaft gespeichert</span>
               </span>
               <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </summary>
@@ -168,77 +175,71 @@
             <div class="settings-body">
               <section class="settings-group" aria-labelledby="printers-heading">
                 <div class="group-header">
-                  <h3 id="printers-heading">Drucker</h3>
-                  <button type="button" class="btn btn-small" id="add-printer">+ Drucker</button>
+                  <h3 id="printers-heading" data-i18n="settings.printers">Drucker</h3>
+                  <button type="button" class="btn btn-small" id="add-printer" data-i18n="settings.addPrinter">+ Drucker</button>
                 </div>
-                <p class="group-hint">
-                  <strong>Leistung</strong>: durchschnittliche Leistungsaufnahme während des Drucks.
-                  <strong>Durchsatz</strong>: Material pro Stunde bei 0,2&nbsp;mm Schichthöhe, gemittelt über einen ganzen Druck –
-                  z.&nbsp;B. aus dem Slicer: Filamentvolumen ÷ Druckzeit.
-                  <strong>Verschleiß</strong>: Abnutzung pro Druckstunde (Düse, Riemen, Druckplatte, Abschreibung) –
-                  grob: (Druckerpreis + Ersatzteile) ÷ erwartete Druckstunden.
-                </p>
+                <p class="group-hint" data-i18n-html="settings.printersHint.html"></p>
                 <div class="item-list" id="printer-list"></div>
               </section>
 
               <section class="settings-group" aria-labelledby="materials-heading">
                 <div class="group-header">
-                  <h3 id="materials-heading">Materialien</h3>
-                  <button type="button" class="btn btn-small" id="add-material">+ Material</button>
+                  <h3 id="materials-heading" data-i18n="settings.materials">Materialien</h3>
+                  <button type="button" class="btn btn-small" id="add-material" data-i18n="settings.addMaterial">+ Material</button>
                 </div>
-                <p class="group-hint">Typische Dichten: PLA 1,24 · PETG 1,27 · ABS 1,04 · ASA 1,07 · TPU 1,21 g/cm³.</p>
+                <p class="group-hint" data-i18n="settings.materialsHint">Typische Dichten: PLA 1,24 · PETG 1,27 · ABS 1,04 · ASA 1,07 · TPU 1,21 g/cm³.</p>
                 <div class="item-list" id="material-list"></div>
               </section>
 
               <section class="settings-group" aria-labelledby="costs-heading">
                 <div class="group-header">
-                  <h3 id="costs-heading">Kosten &amp; Kalkulation</h3>
+                  <h3 id="costs-heading" data-i18n="settings.costs">Kosten &amp; Kalkulation</h3>
                   <span class="save-state" id="general-save-state" aria-live="polite"></span>
                 </div>
                 <div class="field-grid general-grid">
                   <div class="field">
-                    <label for="g-electricityPricePerKwh">Strompreis</label>
+                    <label for="g-electricityPricePerKwh" data-i18n="settings.electricityPrice">Strompreis</label>
                     <div class="input-unit">
                       <input id="g-electricityPricePerKwh" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
                       <span class="unit">€/kWh</span>
                     </div>
-                    <p class="field-hint">Arbeitspreis deines Stromtarifs</p>
+                    <p class="field-hint" data-i18n="settings.electricityPriceHint">Arbeitspreis deines Stromtarifs</p>
                     <p class="field-error"></p>
                   </div>
                   <div class="field">
-                    <label for="g-wagePerHour">Stundenlohn</label>
+                    <label for="g-wagePerHour" data-i18n="settings.wage">Stundenlohn</label>
                     <div class="input-unit">
                       <input id="g-wagePerHour" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
                       <span class="unit">€/h</span>
                     </div>
-                    <p class="field-hint">für die Arbeitszeit, z.&nbsp;B. Mindestlohn</p>
+                    <p class="field-hint" data-i18n="settings.wageHint">für die Arbeitszeit, z. B. Mindestlohn</p>
                     <p class="field-error"></p>
                   </div>
                   <div class="field">
-                    <label for="g-profitMarginPercent">Gewinnmarge</label>
+                    <label for="g-profitMarginPercent" data-i18n="settings.margin">Gewinnmarge</label>
                     <div class="input-unit">
                       <input id="g-profitMarginPercent" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
                       <span class="unit">%</span>
                     </div>
-                    <p class="field-hint">Aufschlag auf alle Kosten (Material, Strom, Verschleiß, Arbeit)</p>
+                    <p class="field-hint" data-i18n="settings.marginHint">Aufschlag auf alle Kosten (Material, Strom, Verschleiß, Arbeit)</p>
                     <p class="field-error"></p>
                   </div>
                   <div class="field field-wide">
-                    <label for="g-supportSurchargePercent">Stützmaterial-Zuschlag</label>
+                    <label for="g-supportSurchargePercent" data-i18n="settings.supportSurcharge">Stützmaterial-Zuschlag</label>
                     <div class="input-unit">
                       <input id="g-supportSurchargePercent" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
                       <span class="unit">%</span>
                     </div>
-                    <p class="field-hint">Mehr Material, wenn Stützstrukturen an sind</p>
+                    <p class="field-hint" data-i18n="settings.supportSurchargeHint">Mehr Material, wenn Stützstrukturen an sind</p>
                     <p class="field-error"></p>
                   </div>
                   <div class="field field-wide">
-                    <label for="g-wallThicknessMm">Wandstärke</label>
+                    <label for="g-wallThicknessMm" data-i18n="settings.wallThickness">Wandstärke</label>
                     <div class="input-unit">
                       <input id="g-wallThicknessMm" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
                       <span class="unit">mm</span>
                     </div>
-                    <p class="field-hint">Wände + Boden/Deckel, ergibt den Wandanteil</p>
+                    <p class="field-hint" data-i18n="settings.wallThicknessHint">Wände + Boden/Deckel, ergibt den Wandanteil</p>
                     <p class="field-error"></p>
                   </div>
                 </div>
@@ -246,80 +247,73 @@
 
               <section class="settings-group" aria-labelledby="labour-heading">
                 <div class="group-header">
-                  <h3 id="labour-heading">Arbeitszeit</h3>
+                  <h3 id="labour-heading" data-i18n="settings.labour">Arbeitszeit</h3>
                   <span class="save-state" aria-live="polite"></span>
                 </div>
-                <p class="group-hint">
-                  Pro Auftrag fällt einmal die <strong>Versandzeit</strong> an. Dazu kommt <strong>pro Druckplatte</strong>
-                  Zeit zum Abnehmen und Nacharbeiten: von der Mindest- bis zur Höchstzeit, je nach Modellvolumen auf der Platte
-                  (Volumen × Stück pro Platte), auf ganze Minuten gerundet.
-                </p>
+                <p class="group-hint" data-i18n-html="settings.labourHint.html"></p>
                 <div class="field-grid labour-grid">
                   <div class="field">
-                    <label for="g-shippingMinutes">Versand</label>
+                    <label for="g-shippingMinutes" data-i18n="settings.shipping">Versand</label>
                     <div class="input-unit">
                       <input id="g-shippingMinutes" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
                       <span class="unit">min</span>
                     </div>
-                    <p class="field-hint">fix pro Auftrag</p>
+                    <p class="field-hint" data-i18n="settings.shippingHint">fix pro Auftrag</p>
                     <p class="field-error"></p>
                   </div>
                   <div class="field">
-                    <label for="g-plateMinutesMin">Pro Platte mindestens</label>
+                    <label for="g-plateMinutesMin" data-i18n="settings.plateMin">Pro Platte mindestens</label>
                     <div class="input-unit">
                       <input id="g-plateMinutesMin" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
                       <span class="unit">min</span>
                     </div>
-                    <p class="field-hint">kleines Modell</p>
+                    <p class="field-hint" data-i18n="settings.plateMinHint">kleines Modell</p>
                     <p class="field-error"></p>
                   </div>
                   <div class="field">
-                    <label for="g-plateMinutesMax">Pro Platte höchstens</label>
+                    <label for="g-plateMinutesMax" data-i18n="settings.plateMax">Pro Platte höchstens</label>
                     <div class="input-unit">
                       <input id="g-plateMinutesMax" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
                       <span class="unit">min</span>
                     </div>
-                    <p class="field-hint">volle Platte</p>
+                    <p class="field-hint" data-i18n="settings.plateMaxHint">volle Platte</p>
                     <p class="field-error"></p>
                   </div>
                   <div class="field">
-                    <label for="g-fullPlateVolumeCm3">Höchstzeit ab</label>
+                    <label for="g-fullPlateVolumeCm3" data-i18n="settings.fullPlate">Höchstzeit ab</label>
                     <div class="input-unit">
                       <input id="g-fullPlateVolumeCm3" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
                       <span class="unit">cm³</span>
                     </div>
-                    <p class="field-hint">Modellvolumen pro Platte</p>
+                    <p class="field-hint" data-i18n="settings.fullPlateHint">Modellvolumen pro Platte</p>
                     <p class="field-error"></p>
                   </div>
                 </div>
               </section>
 
-              <p class="storage-note">
-                Gespeichert auf diesem Computer in <code id="storage-path">data/settings.json</code> –
-                unabhängig vom Browser, also auch nach dem Löschen der Browserdaten oder in einem anderen Browser vorhanden.
-              </p>
+              <p class="storage-note" data-i18n-html="settings.storage.html"></p>
             </div>
           </details>
         </section>
       </div>
 
-      <aside class="side-column" aria-label="Ergebnis">
+      <aside class="side-column" aria-label="Ergebnis" data-i18n-attr="aria-label:aria.result">
         <section class="price-card" aria-labelledby="price-heading">
-          <h2 class="price-label" id="price-heading">Verkaufspreis</h2>
+          <h2 class="price-label" id="price-heading" data-i18n="price.title">Verkaufspreis</h2>
           <p class="price is-empty" id="price" aria-live="polite" aria-atomic="true">– €</p>
           <p class="price-each" id="price-each" hidden></p>
-          <p class="price-sub" id="price-sub">Lade ein Modell hoch, um den Preis zu berechnen.</p>
+          <p class="price-sub" id="price-sub"></p>
           <dl class="breakdown">
-            <div class="row"><dt>Gewicht (geschätzt)</dt><dd id="r-weight">–</dd></div>
-            <div class="row"><dt>Druckzeit (geschätzt)</dt><dd id="r-time">–</dd></div>
-            <div class="row row-group-start"><dt>Materialkosten</dt><dd id="r-material">–</dd></div>
-            <div class="row"><dt>Stromkosten</dt><dd id="r-electricity">–</dd></div>
-            <div class="row"><dt>Verschleiß</dt><dd id="r-wear">–</dd></div>
-            <div class="row"><dt>Arbeitszeit</dt><dd id="r-labour">–</dd></div>
+            <div class="row"><dt data-i18n="price.weight">Gewicht (geschätzt)</dt><dd id="r-weight">–</dd></div>
+            <div class="row"><dt data-i18n="price.time">Druckzeit (geschätzt)</dt><dd id="r-time">–</dd></div>
+            <div class="row row-group-start"><dt data-i18n="price.material">Materialkosten</dt><dd id="r-material">–</dd></div>
+            <div class="row"><dt data-i18n="price.electricity">Stromkosten</dt><dd id="r-electricity">–</dd></div>
+            <div class="row"><dt data-i18n="price.wear">Verschleiß</dt><dd id="r-wear">–</dd></div>
+            <div class="row"><dt data-i18n="price.labour">Arbeitszeit</dt><dd id="r-labour">–</dd></div>
             <div class="row"><dt id="r-profit-label">Gewinn</dt><dd id="r-profit">–</dd></div>
           </dl>
           <details class="explain" id="explain" hidden>
-            <summary>Rechenweg anzeigen</summary>
+            <summary data-i18n="price.explain">Rechenweg anzeigen</summary>
             <ol id="explain-list"></ol>
           </details>
         </section>

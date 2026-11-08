@@ -1,4 +1,4 @@
-// German number formatting/parsing and input validation.
+// Number formatting/parsing (German and English) and input validation.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
@@ -6,6 +6,7 @@ import {
   formatEuroCents,
   formatEuroPrecise,
   formatInputNumber,
+  formatNumber,
   parseDecimal,
 } from '../public/lib/format.js';
 import {
@@ -41,6 +42,24 @@ describe('number input', () => {
     assert.equal(formatDuration(0.5), '30 min');
     assert.equal(formatDuration(2.25), '2 h 15 min');
     assert.equal(formatDuration(0.001), '< 1 min');
+  });
+
+  it('formats for English readers', () => {
+    assert.equal(formatInputNumber(0.2, 'en'), '0.2');
+    assert.equal(formatNumber(1234.5, 2, 'en'), '1,234.50');
+    assert.equal(formatEuroCents(1234, 'en'), '€12.34');
+    assert.equal(formatEuroPrecise(1.30496, { truncate: true, lang: 'en' }), '€1.3049');
+    assert.equal(formatDuration(1001.5, 'en'), '1,001 h 30 min');
+  });
+
+  it('reads English input, including thousands separators', () => {
+    assert.equal(parseDecimal('0.2', 'en'), 0.2);
+    assert.equal(parseDecimal('1,234.5', 'en'), 1234.5);
+    assert.equal(parseDecimal('1,000', 'en'), 1000);
+    assert.equal(parseDecimal('12,345,678', 'en'), 12345678);
+    assert.equal(parseDecimal('0,25', 'en'), 0.25); // a decimal comma still works
+    assert.equal(parseDecimal('2,5', 'en'), 2.5);
+    assert.ok(Number.isNaN(parseDecimal('1.2.3', 'en')));
   });
 
   it('shows exact amounts in the calculation steps without misleading rounding', () => {
@@ -102,5 +121,24 @@ describe('validation', () => {
     assert.match(validateGeneral({ ...general, plateMinutesMin: 20 }).errors.plateMinutesMax, /Mindestzeit .* nicht größer/);
     assert.ok(validateGeneral({ ...general, fullPlateVolumeCm3: 0 }).errors.fullPlateVolumeCm3);
     assert.equal(checkPlateMinutes(3, 3), null);
+  });
+
+  it('gives English messages with English numbers and units', () => {
+    assert.deepEqual(validatePrinter({ name: ' ', powerW: 0, throughputCm3PerH: 'fast', wearPerHour: -0.1 }, 'en').errors, {
+      name: 'Please enter a name.',
+      powerW: 'Must be greater than 0 W.',
+      throughputCm3PerH: 'Please enter a number.',
+      wearPerHour: 'At least €0/h.',
+    });
+    assert.equal(checkNumber('infillPercent', 120, 'en').error, 'At most 100%.');
+    assert.equal(checkNumber('wagePerHour', 2000, 'en').error, 'At most €1,000/h.');
+    assert.equal(checkNumber('wagePerHour', 2000).error, 'Höchstens 1.000 €/h.');
+    assert.equal(checkNumber('layerHeightMm', '0', 'en').error, 'At least 0.01 mm.');
+    assert.equal(checkNumber('layerHeightMm', '0.12', 'en').value, 0.12);
+    assert.equal(checkNumber('fullPlateVolumeCm3', 200000, 'en').error, 'At most 100,000 cm³.');
+    assert.equal(validateJob({ objectCount: 0, plateCount: 1 }, 'en').errors.objectCount, 'At least 1 piece.');
+    assert.equal(validateJob({ objectCount: 20000, plateCount: 1 }, 'en').errors.objectCount, 'At most 10,000 pieces.');
+    assert.equal(validateJob({ objectCount: 2, plateCount: 3 }, 'en').errors.plateCount, 'No more plates than pieces.');
+    assert.equal(checkPlateMinutes(5, 3, 'en'), 'The minimum time per plate must not be greater than the maximum.');
   });
 });

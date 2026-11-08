@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
+import { t } from '../public/lib/i18n.js';
 import { createStore, StoreError } from '../src/store.js';
 
 const dirs = [];
@@ -147,8 +148,10 @@ describe('settings storage', () => {
     const state = createStore(dir).getState();
     assert.equal(state.settings.printers[0].id, 'beispieldrucker');
     assert.equal(state.warnings.length, 1);
-    assert.match(state.warnings[0], /beschädigt/);
-    const backups = fs.readdirSync(dir).filter((name) => name.startsWith('settings.json.defekt-'));
+    assert.equal(state.warnings[0].code, 'warning.brokenFile');
+    assert.match(t('de', state.warnings[0].code, state.warnings[0].params), /beschädigt/);
+    assert.match(t('en', state.warnings[0].code, state.warnings[0].params), /was damaged/);
+    const backups = fs.readdirSync(dir).filter((name) => name.startsWith('settings.json.broken-'));
     assert.equal(backups.length, 1);
     assert.equal(fs.readFileSync(path.join(dir, backups[0]), 'utf8'), '{ "printers": [ kaputt');
   });
@@ -199,5 +202,62 @@ describe('settings storage', () => {
       store.setLastPrint({ printerId: null, materialId: null, layerHeightMm: 0.2, infillPercent: i, support: false });
     }
     assert.deepEqual(fs.readdirSync(dir).sort(), ['last-print.json', 'settings.json']);
+  });
+});
+
+describe('interface language', () => {
+  it('a new installation has no language yet (the browser decides)', () => {
+    const { settings } = createStore(tempDir()).getState();
+    assert.equal(settings.language, null);
+    assert.equal(settings.printers[0].name, 'Beispieldrucker');
+  });
+
+  it('settings from before the language switch keep the German interface', () => {
+    const dir = tempDir();
+    const old = createStore(dir).getState().settings;
+    delete old.language;
+    fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(old));
+    const { settings, warnings } = createStore(dir).getState();
+    assert.equal(settings.language, 'de');
+    assert.deepEqual(warnings, []);
+    assert.equal(readJson(path.join(dir, 'settings.json')).language, 'de');
+  });
+
+  it('stores the chosen language and keeps it after a restart', () => {
+    const dir = tempDir();
+    createStore(dir).setLanguage('en');
+    assert.equal(createStore(dir).getState().settings.language, 'en');
+    assert.equal(createStore(dir).language(), 'en');
+  });
+
+  it('renames the untouched example printer, but never a printer the user named', () => {
+    const dir = tempDir();
+    const store = createStore(dir);
+    store.addItem('printers', { name: 'Bambu P1S', powerW: 130, throughputCm3PerH: 28, wearPerHour: 0.3 });
+    assert.deepEqual(store.setLanguage('en').printers.map((p) => p.name), ['Example printer', 'Bambu P1S']);
+    assert.deepEqual(store.setLanguage('de').printers.map((p) => p.name), ['Beispieldrucker', 'Bambu P1S']);
+    store.updateItem('printers', 'beispieldrucker', { name: 'Mein P1S', powerW: 100, throughputCm3PerH: 20, wearPerHour: 0.25 });
+    assert.deepEqual(store.setLanguage('en').printers.map((p) => p.name), ['Mein P1S', 'Bambu P1S']);
+  });
+
+  it('rejects unknown languages', () => {
+    const store = createStore(tempDir());
+    throwsStoreError(() => store.setLanguage('fr'), 400, /Sprache: Unbekannte Sprache/);
+    throwsStoreError(() => store.setLanguage('fr', 'en'), 400, /Language: Unknown language/);
+  });
+
+  it('answers in the requested language', () => {
+    const store = createStore(tempDir());
+    throwsStoreError(() => store.deleteItem('printers', 'beispieldrucker', 'en'), 409, /The last printer cannot be deleted/);
+    throwsStoreError(() => store.deleteItem('printers', 'beispieldrucker', 'de'), 409, /Der letzte Drucker/);
+    assert.throws(
+      () => store.addItem('printers', { name: '', powerW: 0, throughputCm3PerH: 20, wearPerHour: 0 }, 'en'),
+      (error) => {
+        assert.equal(error.errors.name, 'Please enter a name.');
+        assert.equal(error.errors.powerW, 'Must be greater than 0 W.');
+        assert.match(error.message, /^Name: Please enter a name\. Power: Must be greater than 0 W\.$/);
+        return true;
+      },
+    );
   });
 });

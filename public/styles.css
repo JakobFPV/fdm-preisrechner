@@ -134,6 +134,40 @@ code {
 
 .brand img { border-radius: 7px; }
 
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+
+/* DE | EN */
+.lang-switch {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.lang-option {
+  min-width: 38px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.lang-option:hover { color: var(--text); }
+.lang-option[aria-pressed="true"] { background: var(--surface); color: var(--accent-text); box-shadow: var(--shadow); }
+
+/* Until the language is known, texts stay hidden (no flash of the wrong language). */
+body:not(.is-ready) .brand span,
+body:not(.is-ready) .topbar-actions,
+body:not(.is-ready) .layout { visibility: hidden; }
+
 /* ---------- Page layout ---------- */
 
 .page { max-width: 1240px; margin: 0 auto; padding: 24px; }

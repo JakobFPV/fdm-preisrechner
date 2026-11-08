@@ -3,9 +3,14 @@
 /** Wear and tear per print hour (nozzle, belts, build plate, depreciation), also used for older printer entries. */
 export const DEFAULT_WEAR_PER_HOUR = 0.25;
 
+/** Name of the example printer per language; it follows the language until the user renames it. */
+export const DEFAULT_PRINTER_NAMES = { de: 'Beispieldrucker', en: 'Example printer' };
+
 export function defaultSettings() {
   return {
     version: 1,
+    // null: no language chosen yet – the interface uses the browser's language and stores it
+    language: null,
     electricityPricePerKwh: 0.35,
     wagePerHour: 14,
     profitMarginPercent: 50,
@@ -18,7 +23,13 @@ export function defaultSettings() {
     fullPlateVolumeCm3: 500,
     printers: [
       // Throughput: average material per hour at 0.2 mm layer height, including travel moves.
-      { id: 'beispieldrucker', name: 'Beispieldrucker', powerW: 100, throughputCm3PerH: 20, wearPerHour: DEFAULT_WEAR_PER_HOUR },
+      {
+        id: 'beispieldrucker',
+        name: DEFAULT_PRINTER_NAMES.de,
+        powerW: 100,
+        throughputCm3PerH: 20,
+        wearPerHour: DEFAULT_WEAR_PER_HOUR,
+      },
     ],
     materials: [
       { id: 'pla', name: 'PLA', pricePerKg: 20, densityGPerCm3: 1.24 },

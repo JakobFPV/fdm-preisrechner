@@ -1,8 +1,10 @@
 // Browser logic of the FDM price calculator:
-// model upload, per-print controls, long-term settings (stored by the local server) and the live price.
+// model upload, per-print controls, long-term settings (stored by the local server), the live price
+// and the German/English language switch (texts in lib/i18n.js).
 
 import { calculatePrice, REFERENCE_LAYER_HEIGHT_MM } from './lib/calc.js';
 import { analyzeModelFile, checkModelFileName, MAX_FILE_BYTES, ModelError } from './lib/mesh.js';
+import { detectLanguage, normalizeLanguage, t, tn } from './lib/i18n.js';
 import {
   checkNumber,
   checkPlateMinutes,
@@ -27,11 +29,13 @@ document.getElementById('boot-message')?.remove();
 const $ = (id) => document.getElementById(id);
 
 const state = {
+  lang: detectLanguage(navigator.languages ?? [navigator.language]), // replaced by the stored choice
   settings: null, // long-term settings from data/settings.json
   lastPrint: null, // per-print values from data/last-print.json
   storage: null, // file locations, shown in the settings panel
+  warnings: [], // { code, params } from loading the settings files
   model: null, // { fileName, info }
-  modelError: null, // { fileName, message }
+  modelError: null, // { fileName, code, params } or { fileName, unexpected }
   modelLoading: null, // file name while reading
   job: { objectCount: 1, plateCount: 1 }, // quantity of the current model (not stored, reset per model)
 };
@@ -41,40 +45,55 @@ const ui = {
   confirmDelete: { printers: null, materials: null }, // item id or null
 };
 
+// ---------------------------------------------------------------------------
+// Language helpers: everything visible goes through these.
+
+const tr = (key, params) => t(state.lang, key, params);
+const trn = (key, count, params) => tn(state.lang, key, count, params);
+const num = (value, digits = 2) => formatNumber(value, digits, state.lang);
+const compact = (value, digits = 2) => formatCompact(value, digits, state.lang);
+const euro = (euros) => formatEuro(euros, state.lang);
+const euroCents = (cents) => formatEuroCents(cents, state.lang);
+const euroPrecise = (euros, truncate = false) => formatEuroPrecise(euros, { truncate, lang: state.lang });
+const duration = (hours) => formatDuration(hours, state.lang);
+const inputNumber = (value) => formatInputNumber(value, state.lang);
+
 const ITEM_KINDS = {
   printers: {
     listId: 'printer-list',
     addButtonId: 'add-printer',
-    singular: 'Drucker',
-    newLabel: 'Neuer Drucker',
+    kindKey: 'kind.printer',
+    newKey: 'printer.new',
+    lastOneKey: 'printer.lastOne',
     lastPrintKey: 'printerId',
     validate: validatePrinter,
-    lastOneHint: 'Mindestens ein Drucker muss bleiben.',
     fields: [
-      { key: 'name', label: 'Name', placeholder: 'z. B. Prusa MK4S' },
-      { key: 'powerW', label: 'Leistung', unit: 'W', placeholder: 'z. B. 100' },
-      { key: 'throughputCm3PerH', label: 'Durchsatz', unit: 'cm³/h', placeholder: 'z. B. 20' },
+      { key: 'name', placeholderKey: 'placeholder.printerName' },
+      { key: 'powerW', unit: 'W', placeholderKey: 'placeholder.power' },
+      { key: 'throughputCm3PerH', unit: 'cm³/h', placeholderKey: 'placeholder.throughput' },
       // Prefilled for new printers: most people keep the default wear cost.
-      { key: 'wearPerHour', label: 'Verschleiß', unit: '€/h', placeholder: 'z. B. 0,25', defaultValue: 0.25 },
+      { key: 'wearPerHour', unit: '€/h', placeholderKey: 'placeholder.wear', defaultValue: 0.25 },
     ],
-    summary: (p) =>
-      `${formatCompact(p.powerW, 1)} W · ${formatCompact(p.throughputCm3PerH, 2)} cm³/h · ` +
-      `Verschleiß ${formatNumber(p.wearPerHour, 2)} €/h`,
+    summary: (p) => tr('printer.summary', {
+      power: compact(p.powerW, 1),
+      throughput: compact(p.throughputCm3PerH, 2),
+      wear: euro(p.wearPerHour),
+    }),
   },
   materials: {
     listId: 'material-list',
     addButtonId: 'add-material',
-    singular: 'Material',
-    newLabel: 'Neues Material',
+    kindKey: 'kind.material',
+    newKey: 'material.new',
+    lastOneKey: 'material.lastOne',
     lastPrintKey: 'materialId',
     validate: validateMaterial,
-    lastOneHint: 'Mindestens ein Material muss bleiben.',
     fields: [
-      { key: 'name', label: 'Name', placeholder: 'z. B. PLA Silk' },
-      { key: 'pricePerKg', label: 'Preis', unit: '€/kg', placeholder: 'z. B. 24,99' },
-      { key: 'densityGPerCm3', label: 'Dichte', unit: 'g/cm³', placeholder: 'z. B. 1,24' },
+      { key: 'name', placeholderKey: 'placeholder.materialName' },
+      { key: 'pricePerKg', unit: '€/kg', placeholderKey: 'placeholder.price' },
+      { key: 'densityGPerCm3', unit: 'g/cm³', placeholderKey: 'placeholder.density' },
     ],
-    summary: (m) => `${formatNumber(m.pricePerKg, 2)} €/kg · ${formatCompact(m.densityGPerCm3, 3)} g/cm³`,
+    summary: (m) => tr('material.summary', { price: euro(m.pricePerKg), density: compact(m.densityGPerCm3, 3) }),
   },
 };
 
@@ -112,16 +131,18 @@ class ApiError extends Error {
 }
 
 async function api(method, url, body, { keepalive = false } = {}) {
+  const headers = { 'Accept-Language': state.lang }; // server messages in the interface language
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
   let response;
   try {
     response = await fetch(url, {
       method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       keepalive,
     });
   } catch {
-    throw new ApiError('Der Server ist nicht erreichbar. Läuft der Preisrechner noch (npm start)?', 0);
+    throw new ApiError(tr('error.serverUnreachable'), 0);
   }
   let data = null;
   try {
@@ -129,7 +150,9 @@ async function api(method, url, body, { keepalive = false } = {}) {
   } catch {
     // no JSON body
   }
-  if (!response.ok) throw new ApiError(data?.error ?? `Fehler ${response.status}`, response.status, data?.errors);
+  if (!response.ok) {
+    throw new ApiError(data?.error ?? tr('error.http', { status: String(response.status) }), response.status, data?.errors);
+  }
   return data;
 }
 
@@ -140,7 +163,8 @@ function createSaver(save, delay) {
   const run = () => {
     clearTimeout(timer);
     timer = null;
-    chain = chain.then(() => save()).catch((error) => showToast(`Speichern fehlgeschlagen: ${error.message}`, 'error'));
+    chain = chain.then(() => save())
+      .catch((error) => showToast(tr('toast.saveFailed', { message: error.message }), 'error'));
     return chain;
   };
   return {
@@ -177,35 +201,105 @@ const flushSaves = () => Promise.all([lastPrintSaver.flush(), generalSaver.flush
 // Start (init() is called at the end of this file, after all declarations)
 
 async function init() {
+  bindLanguageSwitch();
   bindModelInput();
   bindPrintControls();
   bindJobControls();
   bindGeneralForm();
   bindSettingsPanel();
   bindPageLifecycle();
+  applyStaticTexts();
 
   let data;
   try {
     data = await api('GET', '/api/state');
   } catch (error) {
-    showAppError(`Die gespeicherten Einstellungen konnten nicht geladen werden. ${error.message}`);
+    showAppError(tr('error.loadState', { message: error.message }));
     return;
   }
   state.settings = data.settings;
   state.lastPrint = data.lastPrint;
   state.storage = data.storage;
-  showWarnings(data.warnings ?? []);
+  state.warnings = data.warnings ?? [];
+
+  const stored = normalizeLanguage(state.settings.language);
+  if (stored) {
+    state.lang = stored;
+  } else {
+    // First start: remember the browser's language (this also names the example printer).
+    try {
+      state.settings = (await api('PUT', '/api/settings/language', { language: state.lang })).settings;
+    } catch (error) {
+      showToast(tr('toast.saveFailed', { message: error.message }), 'error');
+    }
+  }
+
+  applyStaticTexts();
   $('layout').inert = false;
+  document.body.classList.add('is-ready');
   renderAll();
 }
 
 function renderAll() {
+  renderWarnings();
   renderSelects();
   renderPrintControls();
   renderJobControls();
   renderSettings();
   renderModel();
   renderResult();
+}
+
+// ---------------------------------------------------------------------------
+// Language
+
+function bindLanguageSwitch() {
+  for (const button of document.querySelectorAll('.lang-option')) {
+    button.addEventListener('click', () => switchLanguage(button.dataset.lang));
+  }
+}
+
+async function switchLanguage(lang) {
+  if (!normalizeLanguage(lang) || lang === state.lang || !state.settings) return;
+  state.lang = lang;
+  clearFieldErrors(); // they were written in the other language
+  applyStaticTexts();
+  renderAll();
+  try {
+    await flushSaves();
+    const response = await api('PUT', '/api/settings/language', { language: lang });
+    state.settings = response.settings; // the untouched example printer was renamed
+    renderSelects();
+    renderPrintControls();
+    renderItemList('printers');
+    renderResult();
+  } catch (error) {
+    showToast(tr('toast.saveFailed', { message: error.message }), 'error');
+  }
+}
+
+/** Texts written in index.html: data-i18n (text), data-i18n-html (trusted markup), data-i18n-attr. */
+function applyStaticTexts() {
+  document.documentElement.lang = state.lang;
+  document.title = tr('app.title');
+  for (const element of document.querySelectorAll('[data-i18n]')) element.textContent = tr(element.dataset.i18n);
+  for (const element of document.querySelectorAll('[data-i18n-html]')) element.innerHTML = tr(element.dataset.i18nHtml);
+  for (const element of document.querySelectorAll('[data-i18n-attr]')) {
+    for (const pair of element.dataset.i18nAttr.split(';')) {
+      const [attribute, key] = pair.split(':');
+      element.setAttribute(attribute.trim(), tr(key.trim()));
+    }
+  }
+  for (const chip of document.querySelectorAll('#layer-chips .chip')) chip.textContent = num(Number(chip.dataset.value), 2);
+  for (const button of document.querySelectorAll('.lang-option')) {
+    button.setAttribute('aria-pressed', String(button.dataset.lang === state.lang));
+  }
+  if (state.storage) $('storage-path').textContent = state.storage.settingsFile;
+}
+
+function clearFieldErrors() {
+  for (const element of document.querySelectorAll('.field-error')) element.textContent = '';
+  for (const input of document.querySelectorAll('.is-invalid')) setFieldError(input, null, null);
 }
 
 // ---------------------------------------------------------------------------
@@ -248,7 +342,7 @@ function bindModelInput() {
     dropzone.classList.remove('is-dragover');
     const files = Array.from(event.dataTransfer.files);
     if (files.length === 0) return;
-    if (files.length > 1) showToast('Mehrere Dateien abgelegt – berechnet wird nur die erste.');
+    if (files.length > 1) showToast(tr('toast.multipleFiles'));
     loadModel(files[0]);
   });
 }
@@ -265,20 +359,17 @@ async function loadModel(file) {
   let error = null;
   try {
     checkModelFileName(file.name);
-    if (file.size > MAX_FILE_BYTES) {
-      throw new ModelError(`Die Datei ist zu groß (maximal ${MAX_FILE_BYTES / 1024 / 1024} MB).`);
-    }
+    if (file.size > MAX_FILE_BYTES) throw new ModelError('model.tooLarge', { max: MAX_FILE_BYTES / 1024 / 1024 });
     await nextPaint(); // show the loading state before the (possibly long) parsing starts
     const info = await analyzeModelFile(await file.arrayBuffer(), file.name);
     model = { fileName: file.name, info };
   } catch (caught) {
-    if (!(caught instanceof ModelError)) console.error(caught);
-    error = {
-      fileName: file.name,
-      message: caught instanceof ModelError
-        ? caught.message
-        : `Die Datei konnte nicht verarbeitet werden (${caught?.message ?? caught}).`,
-    };
+    if (caught instanceof ModelError) {
+      error = { fileName: file.name, code: caught.code, params: caught.params };
+    } else {
+      console.error(caught);
+      error = { fileName: file.name, unexpected: String(caught?.message ?? caught) };
+    }
   }
 
   if (request !== modelRequest) return; // a newer file was chosen meanwhile
@@ -307,42 +398,39 @@ function renderModel() {
   const { model, modelError, modelLoading } = state;
 
   $('model-loading').hidden = !modelLoading;
-  $('model-loading').textContent = modelLoading ? `„${modelLoading}“ wird gelesen …` : '';
+  $('model-loading').textContent = modelLoading ? tr('model.reading', { name: modelLoading }) : '';
 
   $('model-error').hidden = !modelError;
   if (modelError) {
     $('model-error').replaceChildren(
-      h('strong', {}, `„${modelError.fileName}“ konnte nicht gelesen werden.`),
-      modelError.message,
+      h('strong', {}, tr('model.failed', { name: modelError.fileName })),
+      modelError.code
+        ? tr(modelError.code, modelError.params)
+        : tr('model.unexpected', { message: modelError.unexpected }),
     );
   }
 
-  const dropzone = $('dropzone');
-  dropzone.classList.toggle('is-compact', Boolean(model));
-  $('dropzone-title').replaceChildren(
-    ...(model
-      ? [h('strong', {}, 'Anderes Modell'), ' hierher ziehen oder klicken']
-      : [h('strong', {}, 'Modell hierher ziehen'), ' oder klicken zum Auswählen']),
-  );
+  $('dropzone').classList.toggle('is-compact', Boolean(model));
+  $('dropzone-title').innerHTML = tr(model ? 'dropzone.loaded.html' : 'dropzone.empty.html');
 
   $('model-info').hidden = !model;
   if (!model) return;
   const { info } = model;
   $('model-name').textContent = model.fileName;
   $('model-name').title = model.fileName;
-  $('model-format').textContent = info.format;
+  $('model-format').textContent = tr(`format.${info.format}`);
   const { x, y, z } = info.sizeMm;
   $('model-size').textContent = `${formatLength(x)} × ${formatLength(y)} × ${formatLength(z)} mm`;
   $('model-volume').textContent = `${formatSmall(info.volumeCm3)} cm³`;
   $('model-area').textContent = `${formatSmall(info.surfaceAreaCm2)} cm²`;
-  $('model-triangles').textContent =
-    formatNumber(info.triangleCount, 0) + (info.objectCount > 1 ? ` · ${info.objectCount} Objekte` : '');
-  $('model-warnings').replaceChildren(...info.warnings.map((warning) => h('li', {}, warning)));
+  $('model-triangles').textContent = num(info.triangleCount, 0) +
+    (info.objectCount > 1 ? ` · ${tr('model.objects', { count: info.objectCount })}` : '');
+  $('model-warnings').replaceChildren(...info.warnings.map((warning) => h('li', {}, tr(warning.code, warning.params))));
   $('model-warnings').hidden = info.warnings.length === 0;
 }
 
-const formatLength = (mm) => formatNumber(mm, mm < 1 ? 3 : 1);
-const formatSmall = (value) => formatNumber(value, value < 0.1 ? 4 : 2);
+const formatLength = (mm) => num(mm, mm < 1 ? 3 : 1);
+const formatSmall = (value) => num(value, value < 0.1 ? 4 : 2);
 
 // ---------------------------------------------------------------------------
 // Per-print controls
@@ -352,7 +440,9 @@ function bindPrintControls() {
   $('material-select').addEventListener('change', (event) => updateLastPrint({ materialId: event.target.value }));
   $('support').addEventListener('change', (event) => updateLastPrint({ support: event.target.checked }));
   $('infill-range').addEventListener('input', (event) => updateLastPrint({ infillPercent: Number(event.target.value) }));
-  bindChips('layer-chips', 'layerHeightMm');
+  for (const chip of document.querySelectorAll('#layer-chips .chip')) {
+    chip.addEventListener('click', () => updateLastPrint({ layerHeightMm: Number(chip.dataset.value) }));
+  }
   bindNumberInput($('layer-height'), 'layerHeightMm', {
     get: () => state.lastPrint?.layerHeightMm,
     set: (value) => updateLastPrint({ layerHeightMm: value }),
@@ -363,24 +453,54 @@ function bindPrintControls() {
   });
 }
 
-function bindChips(containerId, key) {
-  for (const chip of document.querySelectorAll(`#${containerId} .chip`)) {
-    chip.addEventListener('click', () => updateLastPrint({ [key]: Number(chip.dataset.value) }));
-  }
-}
-
-function syncChips(containerId, value) {
-  for (const chip of document.querySelectorAll(`#${containerId} .chip`)) {
-    chip.setAttribute('aria-pressed', String(Math.abs(Number(chip.dataset.value) - value) < 1e-9));
-  }
-}
-
 function updateLastPrint(changes) {
   if (!state.lastPrint) return;
   Object.assign(state.lastPrint, changes);
   renderPrintControls();
   renderResult();
   lastPrintSaver.schedule();
+}
+
+function renderSelects() {
+  const { printers, materials } = state.settings;
+  ensureValidSelection();
+  fillSelect($('printer-select'), printers, state.lastPrint.printerId);
+  fillSelect($('material-select'), materials, state.lastPrint.materialId);
+}
+
+function fillSelect(select, items, selectedId) {
+  select.replaceChildren(...items.map((item) => new Option(item.name, item.id, false, item.id === selectedId)));
+}
+
+/** Falls back to the first printer/material if the selected one no longer exists. */
+function ensureValidSelection() {
+  const changes = {};
+  for (const [kind, key] of [['printers', 'printerId'], ['materials', 'materialId']]) {
+    const list = state.settings[kind];
+    if (!list.some((item) => item.id === state.lastPrint[key])) changes[key] = list[0]?.id ?? null;
+  }
+  if (Object.keys(changes).length > 0) {
+    Object.assign(state.lastPrint, changes);
+    lastPrintSaver.schedule();
+  }
+}
+
+function renderPrintControls() {
+  const print = state.lastPrint;
+  setInputValue($('layer-height'), print.layerHeightMm);
+  for (const chip of document.querySelectorAll('#layer-chips .chip')) {
+    chip.setAttribute('aria-pressed', String(Math.abs(Number(chip.dataset.value) - print.layerHeightMm) < 1e-9));
+  }
+  setInputValue($('infill'), print.infillPercent);
+  $('infill-range').value = String(print.infillPercent);
+  $('support').checked = print.support;
+  $('support-hint').textContent = tr('print.supportHint', { value: compact(state.settings.supportSurchargePercent, 2) });
+  if ($('printer-select').value !== print.printerId) $('printer-select').value = print.printerId;
+  if ($('material-select').value !== print.materialId) $('material-select').value = print.materialId;
+  const printer = state.settings.printers.find((p) => p.id === print.printerId);
+  const material = state.settings.materials.find((m) => m.id === print.materialId);
+  $('printer-hint').textContent = printer ? ITEM_KINDS.printers.summary(printer) : '';
+  $('material-hint').textContent = material ? ITEM_KINDS.materials.summary(material) : '';
 }
 
 // ---------------------------------------------------------------------------
@@ -406,12 +526,12 @@ function bindJobControls() {
 
 /**
  * Changes the number of pieces or plates. Fewer pieces than plates also lowers the plates.
- * Returns a German error message if the new value is not possible, otherwise null.
+ * Returns an error message if the new value is not possible, otherwise null.
  */
 function updateJob(key, value) {
   const next = { ...state.job, [key]: value };
   if (key === 'objectCount' && next.plateCount > next.objectCount) next.plateCount = next.objectCount;
-  const result = validateJob(next);
+  const result = validateJob(next, state.lang);
   if (result.errors) return result.errors[key] ?? Object.values(result.errors)[0];
   state.job = result.value;
   renderJobControls();
@@ -433,62 +553,29 @@ function renderJobControls() {
 /** The automatic labour time: shown in step 4, with the rule when no model is loaded yet. */
 function renderLabour(calc) {
   const s = state.settings;
-  const plates = (count) => (count === 1 ? '1 Platte' : `${count} Platten`);
   if (!calc) {
-    $('labour-total').textContent =
-      `${formatCompact(s.shippingMinutes, 1)} min Versand + ${formatCompact(s.plateMinutesMin, 1)}–` +
-      `${formatCompact(s.plateMinutesMax, 1)} min pro Druckplatte`;
-    $('labour-detail').textContent =
-      `je nach Modellvolumen pro Platte – die Höchstzeit gilt ab ${formatCompact(s.fullPlateVolumeCm3, 1)} cm³`;
+    $('labour-total').textContent = tr('labour.rule', {
+      shipping: compact(s.shippingMinutes, 1),
+      min: compact(s.plateMinutesMin, 1),
+      max: compact(s.plateMinutesMax, 1),
+    });
+    $('labour-detail').textContent = tr('labour.ruleDetail', { volume: compact(s.fullPlateVolumeCm3, 1) });
     return;
   }
-  $('labour-total').textContent =
-    `${formatCompact(s.shippingMinutes, 1)} min Versand + ${plates(calc.plateCount)} × ${formatCompact(calc.plateMinutes, 1)} min ` +
-    `= ${formatCompact(calc.labourMinutes, 1)} min (${formatEuroCents(calc.labourCostCents)})`;
-  $('labour-detail').textContent =
-    `${formatCompact(calc.plateMinutes, 1)} min pro Platte bei ${formatNumber(calc.modelVolumePerPlateCm3, 1)} cm³ ` +
-    `Modellvolumen pro Platte (${formatCompact(s.plateMinutesMin, 1)}–${formatCompact(s.plateMinutesMax, 1)} min, ` +
-    `Höchstzeit ab ${formatCompact(s.fullPlateVolumeCm3, 1)} cm³)`;
-}
-
-function renderSelects() {
-  const { printers, materials } = state.settings;
-  ensureValidSelection();
-  fillSelect($('printer-select'), printers, state.lastPrint.printerId, (p) => p.name);
-  fillSelect($('material-select'), materials, state.lastPrint.materialId, (m) => m.name);
-}
-
-function fillSelect(select, items, selectedId, label) {
-  select.replaceChildren(...items.map((item) => new Option(label(item), item.id, false, item.id === selectedId)));
-}
-
-/** Falls back to the first printer/material if the selected one no longer exists. */
-function ensureValidSelection() {
-  const changes = {};
-  for (const [kind, key] of [['printers', 'printerId'], ['materials', 'materialId']]) {
-    const list = state.settings[kind];
-    if (!list.some((item) => item.id === state.lastPrint[key])) changes[key] = list[0]?.id ?? null;
-  }
-  if (Object.keys(changes).length > 0) {
-    Object.assign(state.lastPrint, changes);
-    lastPrintSaver.schedule();
-  }
-}
-
-function renderPrintControls() {
-  const print = state.lastPrint;
-  setInputValue($('layer-height'), print.layerHeightMm);
-  syncChips('layer-chips', print.layerHeightMm);
-  setInputValue($('infill'), print.infillPercent);
-  $('infill-range').value = String(print.infillPercent);
-  $('support').checked = print.support;
-  $('support-hint').textContent = `+${formatCompact(state.settings.supportSurchargePercent, 2)} % Material`;
-  if ($('printer-select').value !== print.printerId) $('printer-select').value = print.printerId;
-  if ($('material-select').value !== print.materialId) $('material-select').value = print.materialId;
-  const printer = state.settings.printers.find((p) => p.id === print.printerId);
-  const material = state.settings.materials.find((m) => m.id === print.materialId);
-  $('printer-hint').textContent = printer ? ITEM_KINDS.printers.summary(printer) : '';
-  $('material-hint').textContent = material ? ITEM_KINDS.materials.summary(material) : '';
+  $('labour-total').textContent = tr('labour.total', {
+    shipping: compact(s.shippingMinutes, 1),
+    plates: trn('plates', calc.plateCount),
+    perPlate: compact(calc.plateMinutes, 1),
+    total: compact(calc.labourMinutes, 1),
+    cost: euroCents(calc.labourCostCents),
+  });
+  $('labour-detail').textContent = tr('labour.detail', {
+    perPlate: compact(calc.plateMinutes, 1),
+    volume: num(calc.modelVolumePerPlateCm3, 1),
+    min: compact(s.plateMinutesMin, 1),
+    max: compact(s.plateMinutesMax, 1),
+    full: compact(s.fullPlateVolumeCm3, 1),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -513,18 +600,17 @@ function renderResult() {
   if (!state.settings) return;
   const result = currentResult();
   const price = $('price');
-  $('r-profit-label').textContent = `Gewinn (${formatCompact(state.settings.profitMarginPercent, 2)} %)`;
+  $('r-profit-label').textContent = tr('price.profit', { value: compact(state.settings.profitMarginPercent, 2) });
 
   if (!result) {
-    price.textContent = '– €';
+    price.textContent = '–';
     price.classList.add('is-empty');
-    $('price-sub').textContent = state.modelLoading
-      ? 'Modell wird gelesen …'
-      : state.model
-        ? 'Bitte Drucker und Material wählen.'
-        : state.modelError
-          ? 'Kein gültiges Modell – bitte eine andere Datei wählen.'
-          : 'Lade ein Modell hoch, um den Preis zu berechnen.';
+    $('price-sub').textContent = tr(
+      state.modelLoading ? 'price.empty.loading'
+        : state.model ? 'price.empty.choose'
+          : state.modelError ? 'price.empty.invalid'
+            : 'price.empty.upload',
+    );
     for (const id of ['r-weight', 'r-time', 'r-material', 'r-electricity', 'r-wear', 'r-labour', 'r-profit']) {
       $(id).replaceChildren('–');
     }
@@ -538,40 +624,40 @@ function renderResult() {
   const print = state.lastPrint;
   const pieces = calc.objectCount;
   price.classList.remove('is-empty');
-  price.textContent = formatEuroCents(calc.priceCents);
+  price.textContent = euroCents(calc.priceCents);
   $('price-each').hidden = pieces === 1;
-  $('price-each').textContent = `${formatNumber(pieces, 0)} Stück · ≈ ${formatEuroCents(calc.pricePerObjectCents)} pro Stück`;
-  $('price-sub').textContent =
-    `${material.name} · ${printer.name} · ${formatCompact(print.layerHeightMm, 3)} mm · ` +
-    `${formatCompact(print.infillPercent, 1)} % Füllung${print.support ? ' · mit Stützen' : ''} · ` +
-    `${calc.plateCount === 1 ? '1 Druckplatte' : `${formatNumber(calc.plateCount, 0)} Druckplatten`}`;
+  $('price-each').textContent = tr('price.each', { count: pieces, price: euroCents(calc.pricePerObjectCents) });
+  $('price-sub').textContent = [
+    material.name,
+    printer.name,
+    `${compact(print.layerHeightMm, 3)} mm`,
+    tr('summary.infill', { value: compact(print.infillPercent, 1) }),
+    print.support ? tr('summary.support') : null,
+    trn('summary.plates', calc.plateCount),
+  ].filter(Boolean).join(' · ');
 
   const weightNotes = [];
-  if (pieces > 1) weightNotes.push(`${formatNumber(pieces, 0)} × ${formatNumber(calc.weightPerObjectG, 1)} g`);
-  if (calc.supportWeightG > 0) weightNotes.push(`davon ${formatNumber(calc.supportWeightG, 1)} g Stützen`);
-  $('r-weight').replaceChildren(
-    `${formatNumber(calc.weightG, 1)} g`,
-    ...weightNotes.map((note) => h('span', { class: 'sub' }, note)),
-  );
+  if (pieces > 1) weightNotes.push(tr('price.weightPieces', { count: pieces, weight: num(calc.weightPerObjectG, 1) }));
+  if (calc.supportWeightG > 0) weightNotes.push(tr('price.weightSupport', { weight: num(calc.supportWeightG, 1) }));
+  $('r-weight').replaceChildren(`${num(calc.weightG, 1)} g`, ...weightNotes.map((note) => h('span', { class: 'sub' }, note)));
   $('r-time').replaceChildren(
-    formatDuration(calc.printHours),
-    calc.plateCount > 1 ? h('span', { class: 'sub' }, `auf ${formatNumber(calc.plateCount, 0)} Druckplatten`) : '',
+    duration(calc.printHours),
+    calc.plateCount > 1 ? h('span', { class: 'sub' }, tr('price.timePlates', { count: calc.plateCount })) : '',
   );
-  $('r-material').replaceChildren(formatEuroCents(calc.materialCostCents));
+  $('r-material').replaceChildren(euroCents(calc.materialCostCents));
   $('r-electricity').replaceChildren(
-    formatEuroCents(calc.electricityCostCents),
-    h('span', { class: 'sub' }, `${formatNumber(calc.energyKwh, 3)} kWh`),
+    euroCents(calc.electricityCostCents),
+    h('span', { class: 'sub' }, `${num(calc.energyKwh, 3)} kWh`),
   );
   $('r-wear').replaceChildren(
-    formatEuroCents(calc.wearCostCents),
-    h('span', { class: 'sub' }, `${formatNumber(calc.printHours, 2)} h × ${formatNumber(printer.wearPerHour, 2)} €/h`),
+    euroCents(calc.wearCostCents),
+    h('span', { class: 'sub' }, `${num(calc.printHours, 2)} h × ${euro(printer.wearPerHour)}/h`),
   );
   $('r-labour').replaceChildren(
-    formatEuroCents(calc.labourCostCents),
-    h('span', { class: 'sub' },
-      `${formatCompact(calc.labourMinutes, 1)} min × ${formatNumber(state.settings.wagePerHour, 2)} €/h`),
+    euroCents(calc.labourCostCents),
+    h('span', { class: 'sub' }, `${compact(calc.labourMinutes, 1)} min × ${euro(state.settings.wagePerHour)}/h`),
   );
-  $('r-profit').replaceChildren(formatEuroCents(calc.profitCents));
+  $('r-profit').replaceChildren(euroCents(calc.profitCents));
   renderLabour(calc);
   renderExplanation(calc, printer, material);
 }
@@ -580,42 +666,76 @@ function renderExplanation(calc, printer, material) {
   const settings = state.settings;
   const print = state.lastPrint;
   const area = state.model.info.surfaceAreaCm2;
-  const cm3 = (value) => `${formatNumber(value, 2)} cm³`;
-  const wall = `${formatCompact(settings.wallThicknessMm, 2)} mm`;
   const lines = [];
 
+  const wallValues = { area: num(area, 2), wall: compact(settings.wallThicknessMm, 2), volume: num(calc.shellVolumeCm3, 2) };
   if (area * (settings.wallThicknessMm / 10) >= calc.volumeCm3) {
-    lines.push(`Wände: ${formatNumber(area, 2)} cm² Oberfläche × ${wall} Wandstärke ist mehr als das Modellvolumen – ` +
-      `das Modell wird komplett massiv gedruckt (${cm3(calc.shellVolumeCm3)}).`);
+    lines.push(tr('explain.wallsSolid', wallValues));
   } else {
-    lines.push(`Wände: ${formatNumber(area, 2)} cm² Oberfläche × ${wall} Wandstärke = ${cm3(calc.shellVolumeCm3)} ` +
-      `(${formatNumber(calc.wallShare * 100, 0)} % des Modellvolumens).`);
+    lines.push(tr('explain.walls', { ...wallValues, share: num(calc.wallShare * 100, 0) }));
   }
-  lines.push(`Füllung: ${cm3(calc.innerVolumeCm3)} Innenraum × ${formatCompact(print.infillPercent, 1)} % = ${cm3(calc.infillVolumeCm3)}.`);
+  lines.push(tr('explain.infill', {
+    inner: num(calc.innerVolumeCm3, 2),
+    infill: compact(print.infillPercent, 1),
+    volume: num(calc.infillVolumeCm3, 2),
+  }));
   if (print.support) {
-    lines.push(`Stützen: ${cm3(calc.partVolumeCm3)} × ${formatCompact(settings.supportSurchargePercent, 2)} % = ${cm3(calc.supportVolumeCm3)}.`);
+    lines.push(tr('explain.support', {
+      part: num(calc.partVolumeCm3, 2),
+      surcharge: compact(settings.supportSurchargePercent, 2),
+      volume: num(calc.supportVolumeCm3, 2),
+    }));
   }
-  const pieces = calc.objectCount > 1 ? ` × ${formatNumber(calc.objectCount, 0)} Stück` : '';
-  lines.push(`Gewicht: ${cm3(calc.materialVolumePerObjectCm3)}${pieces} × ${formatCompact(material.densityGPerCm3, 3)} g/cm³ = ` +
-    `${formatNumber(calc.weightG, 1)} g.`);
-  const layerNote = Math.abs(print.layerHeightMm - REFERENCE_LAYER_HEIGHT_MM) < 1e-9
-    ? ''
-    : ` (${formatCompact(printer.throughputCm3PerH, 2)} cm³/h × ${formatCompact(print.layerHeightMm, 3)} ÷ ` +
-      `${formatCompact(REFERENCE_LAYER_HEIGHT_MM, 2)} mm Schichthöhe)`;
-  lines.push(`Druckzeit: ${cm3(calc.materialVolumeCm3)} ÷ ${formatNumber(calc.throughputCm3PerH, 1)} cm³/h${layerNote} = ` +
-    `${formatDuration(calc.printHours)}.`);
-  lines.push(`Material: ${formatNumber(calc.weightG, 1)} g × ${formatEuro(material.pricePerKg)}/kg = ${formatEuroPrecise(calc.materialCost)}.`);
-  lines.push(`Strom: ${formatCompact(printer.powerW, 1)} W × ${formatNumber(calc.printHours, 2)} h = ` +
-    `${formatNumber(calc.energyKwh, 3)} kWh × ${formatEuro(settings.electricityPricePerKwh)}/kWh = ${formatEuroPrecise(calc.electricityCost)}.`);
-  lines.push(`Verschleiß: ${formatNumber(calc.printHours, 2)} h × ${formatEuro(printer.wearPerHour)}/h = ` +
-    `${formatEuroPrecise(calc.wearCost)}.`);
-  lines.push(`Arbeit: ${formatCompact(settings.shippingMinutes, 1)} min Versand + ${formatNumber(calc.plateCount, 0)} × ` +
-    `${formatCompact(calc.plateMinutes, 1)} min pro Platte (${formatNumber(calc.modelVolumePerPlateCm3, 1)} cm³ Modellvolumen ` +
-    `pro Platte) = ${formatCompact(calc.labourMinutes, 1)} min × ${formatEuro(settings.wagePerHour)}/h = ` +
-    `${formatEuroPrecise(calc.labourCost)}.`);
-  const costs = [calc.materialCost, calc.electricityCost, calc.wearCost, calc.labourCost].map((value) => formatEuroPrecise(value));
-  lines.push(`Preis: (${costs.join(' + ')}) × (1 + ${formatCompact(settings.profitMarginPercent, 2)} %) = ` +
-    `${formatEuroPrecise(calc.price, { truncate: true })} → gerundet ${formatEuroCents(calc.priceCents)}.`);
+  lines.push(tr('explain.weight', {
+    volume: num(calc.materialVolumePerObjectCm3, 2),
+    pieces: calc.objectCount > 1 ? tr('explain.pieces', { count: calc.objectCount }) : '',
+    density: compact(material.densityGPerCm3, 3),
+    weight: num(calc.weightG, 1),
+  }));
+  const layerNote = Math.abs(print.layerHeightMm - REFERENCE_LAYER_HEIGHT_MM) < 1e-9 ? '' : tr('explain.layerNote', {
+    throughput: compact(printer.throughputCm3PerH, 2),
+    layer: compact(print.layerHeightMm, 3),
+    reference: compact(REFERENCE_LAYER_HEIGHT_MM, 2),
+  });
+  lines.push(tr('explain.time', {
+    volume: num(calc.materialVolumeCm3, 2),
+    throughput: num(calc.throughputCm3PerH, 1),
+    note: layerNote,
+    duration: duration(calc.printHours),
+  }));
+  lines.push(tr('explain.material', {
+    weight: num(calc.weightG, 1),
+    price: euro(material.pricePerKg),
+    cost: euroPrecise(calc.materialCost),
+  }));
+  lines.push(tr('explain.electricity', {
+    power: compact(printer.powerW, 1),
+    hours: num(calc.printHours, 2),
+    energy: num(calc.energyKwh, 3),
+    price: euro(settings.electricityPricePerKwh),
+    cost: euroPrecise(calc.electricityCost),
+  }));
+  lines.push(tr('explain.wear', {
+    hours: num(calc.printHours, 2),
+    rate: euro(printer.wearPerHour),
+    cost: euroPrecise(calc.wearCost),
+  }));
+  lines.push(tr('explain.labour', {
+    shipping: compact(settings.shippingMinutes, 1),
+    plates: num(calc.plateCount, 0),
+    perPlate: compact(calc.plateMinutes, 1),
+    volume: num(calc.modelVolumePerPlateCm3, 1),
+    total: compact(calc.labourMinutes, 1),
+    wage: euro(settings.wagePerHour),
+    cost: euroPrecise(calc.labourCost),
+  }));
+  const costs = [calc.materialCost, calc.electricityCost, calc.wearCost, calc.labourCost].map((value) => euroPrecise(value));
+  lines.push(tr('explain.price', {
+    costs: costs.join(' + '),
+    margin: compact(settings.profitMarginPercent, 2),
+    exact: euroPrecise(calc.price, true),
+    price: euroCents(calc.priceCents),
+  }));
 
   $('explain').hidden = false;
   $('explain-list').replaceChildren(...lines.map((line) => h('li', {}, line)));
@@ -653,7 +773,7 @@ function bindGeneralForm() {
       set: (value) => {
         if (!state.settings) return null;
         const next = { ...state.settings, [key]: value };
-        const problem = checkPlateMinutes(next.plateMinutesMin, next.plateMinutesMax);
+        const problem = checkPlateMinutes(next.plateMinutesMin, next.plateMinutesMax, state.lang);
         if (problem && (key === 'plateMinutesMin' || key === 'plateMinutesMax')) return problem;
         state.settings[key] = value;
         lastGeneralInput = $(`g-${key}`);
@@ -676,13 +796,13 @@ function renderSettings() {
 let savedTimer;
 let lastGeneralInput = null;
 
-/** Shows "Gespeichert" in the settings group that was just edited. */
+/** Shows "Saved" in the settings group that was just edited. */
 function flashSaved() {
   const label = lastGeneralInput?.closest('.settings-group')?.querySelector('.save-state') ?? $('general-save-state');
   for (const other of document.querySelectorAll('.save-state')) {
     if (other !== label) other.classList.remove('is-visible');
   }
-  label.textContent = '✓ Gespeichert';
+  label.textContent = tr('settings.saved');
   label.classList.add('is-visible');
   clearTimeout(savedTimer);
   savedTimer = setTimeout(() => label.classList.remove('is-visible'), 1800);
@@ -708,8 +828,8 @@ function renderItemRow(kind, item) {
       h('span', { class: 'item-name' }, item.name),
       h('span', { class: 'item-meta' }, config.summary(item))),
     h('div', { class: 'item-actions' },
-      iconButton('edit', `${item.name} bearbeiten`, 'Bearbeiten', () => startEdit(kind, item.id)),
-      iconButton('trash', `${item.name} löschen`, isLast ? config.lastOneHint : 'Löschen',
+      iconButton('edit', tr('item.edit', { name: item.name }), tr('item.editTitle'), () => startEdit(kind, item.id)),
+      iconButton('trash', tr('item.delete', { name: item.name }), isLast ? tr(config.lastOneKey) : tr('item.deleteTitle'),
         () => askDelete(kind, item.id), { danger: true, disabled: isLast })));
 }
 
@@ -720,11 +840,11 @@ function renderDeleteConfirm(kind, item) {
   };
   return h('div', { class: 'item-row confirm-row', 'data-id': item.id },
     h('div', { class: 'item-text' },
-      h('span', { class: 'item-name' }, `„${item.name}“ löschen?`),
-      h('span', { class: 'item-meta' }, 'Das lässt sich nicht rückgängig machen.')),
+      h('span', { class: 'item-name' }, tr('item.confirmDelete', { name: item.name })),
+      h('span', { class: 'item-meta' }, tr('item.cannotUndo'))),
     h('div', { class: 'item-actions' },
-      h('button', { type: 'button', class: 'btn btn-small btn-danger', 'data-action': 'confirm-delete', onclick: () => deleteItem(kind, item.id) }, 'Löschen'),
-      h('button', { type: 'button', class: 'btn btn-small', onclick: cancel }, 'Abbrechen')));
+      h('button', { type: 'button', class: 'btn btn-small btn-danger', 'data-action': 'confirm-delete', onclick: () => deleteItem(kind, item.id) }, tr('action.delete')),
+      h('button', { type: 'button', class: 'btn btn-small', onclick: cancel }, tr('action.cancel'))));
 }
 
 function renderItemForm(kind, item) {
@@ -734,7 +854,7 @@ function renderItemForm(kind, item) {
     class: 'item-form',
     'data-kind': kind,
     novalidate: true,
-    'aria-label': item ? `${item.name} bearbeiten` : config.newLabel,
+    'aria-label': item ? tr('item.edit', { name: item.name }) : tr(config.newKey),
   });
   for (const field of config.fields) {
     const id = `${kind}-${suffix}-${field.key}`;
@@ -747,20 +867,20 @@ function renderItemForm(kind, item) {
       spellcheck: 'false',
       inputmode: isName ? null : 'decimal',
       maxlength: isName ? '60' : null,
-      placeholder: field.placeholder,
+      placeholder: tr(field.placeholderKey),
     });
-    if (item) input.value = isName ? item.name : formatInputNumber(item[field.key]);
-    else if (field.defaultValue !== undefined) input.value = formatInputNumber(field.defaultValue);
+    if (item) input.value = isName ? item.name : inputNumber(item[field.key]);
+    else if (field.defaultValue !== undefined) input.value = inputNumber(field.defaultValue);
     form.append(h('div', { class: 'field' },
-      h('label', { for: id }, field.label),
+      h('label', { for: id }, tr(`field.${field.key}`)),
       isName ? input : h('div', { class: 'input-unit' }, input, h('span', { class: 'unit' }, field.unit)),
       h('p', { class: 'field-error', 'data-error-for': field.key })));
   }
   form.append(
     h('p', { class: 'form-error', role: 'alert' }),
     h('div', { class: 'form-actions' },
-      h('button', { type: 'submit', class: 'btn btn-small btn-primary' }, item ? 'Speichern' : 'Hinzufügen'),
-      h('button', { type: 'button', class: 'btn btn-small', onclick: () => cancelEdit(kind) }, 'Abbrechen')));
+      h('button', { type: 'submit', class: 'btn btn-small btn-primary' }, tr(item ? 'action.save' : 'action.add')),
+      h('button', { type: 'button', class: 'btn btn-small', onclick: () => cancelEdit(kind) }, tr('action.cancel'))));
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     submitItem(kind, item?.id ?? null, form);
@@ -796,7 +916,7 @@ function askDelete(kind, id) {
 async function submitItem(kind, id, form) {
   const config = ITEM_KINDS[kind];
   const input = Object.fromEntries(config.fields.map((field) => [field.key, form.elements.namedItem(field.key).value]));
-  const result = config.validate(input);
+  const result = config.validate(input, state.lang);
   showFormErrors(form, result.errors ?? {});
   if (result.errors) {
     form.querySelector('.is-invalid')?.focus();
@@ -815,7 +935,7 @@ async function submitItem(kind, id, form) {
     renderSelects();
     renderPrintControls();
     renderResult();
-    showToast(`${config.singular} „${response.item.name}“ ${id === null ? 'hinzugefügt' : 'gespeichert'}.`);
+    showToast(tr(id === null ? 'toast.added' : 'toast.saved', { kind: tr(config.kindKey), name: response.item.name }));
   } catch (error) {
     setFormBusy(form, false);
     showFormErrors(form, error.errors ?? {}, error.errors ? '' : error.message);
@@ -830,7 +950,7 @@ async function deleteItem(kind, id) {
     const response = await api('DELETE', `/api/${kind}/${encodeURIComponent(id)}`);
     state.settings = response.settings;
     state.lastPrint[config.lastPrintKey] = response.lastPrint[config.lastPrintKey];
-    showToast(`${config.singular} „${name}“ gelöscht.`);
+    showToast(tr('toast.deleted', { kind: tr(config.kindKey), name }));
   } catch (error) {
     showToast(error.message, 'error');
   }
@@ -868,13 +988,13 @@ function bindPageLifecycle() {
 }
 
 /**
- * Number input with German decimal comma, live validation and arrow-key steps.
- * `set` may return a German message when the value is valid on its own but not allowed in context.
+ * Number input with live validation, arrow-key steps and the decimal separator of the language.
+ * `set` may return a message when the value is valid on its own but not allowed in context.
  */
 function bindNumberInput(input, key, { get, set }) {
   const errorElement = input.closest('.field')?.querySelector('.field-error');
   input.addEventListener('input', () => {
-    const result = checkNumber(key, input.value);
+    const result = checkNumber(key, input.value, state.lang);
     if ('error' in result) {
       setFieldError(input, errorElement, result.error);
       return;
@@ -885,7 +1005,7 @@ function bindNumberInput(input, key, { get, set }) {
     // Invalid text is replaced by the last valid value.
     setFieldError(input, errorElement, null);
     const value = get();
-    if (value !== undefined) input.value = formatInputNumber(value);
+    if (value !== undefined) input.value = inputNumber(value);
   });
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -893,21 +1013,21 @@ function bindNumberInput(input, key, { get, set }) {
       return;
     }
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-    const current = checkNumber(key, input.value).value ?? get();
+    const current = checkNumber(key, input.value, state.lang).value ?? get();
     if (current === undefined) return;
     event.preventDefault();
     const step = STEPS[key] ?? 1;
     const next = Number((current + (event.key === 'ArrowUp' ? step : -step)).toFixed(6));
-    const result = checkNumber(key, next);
+    const result = checkNumber(key, next, state.lang);
     if ('error' in result) return;
     const problem = set(result.value) || null;
-    if (!problem) input.value = formatInputNumber(result.value);
+    if (!problem) input.value = inputNumber(result.value);
     setFieldError(input, errorElement, problem);
   });
 }
 
 function setInputValue(input, value) {
-  if (document.activeElement !== input) input.value = formatInputNumber(value);
+  if (document.activeElement !== input) input.value = inputNumber(value);
 }
 
 function setFieldError(input, errorElement, message) {
@@ -935,8 +1055,9 @@ function showAppError(message) {
   $('app-error').hidden = false;
 }
 
-function showWarnings(warnings) {
-  $('app-warnings').replaceChildren(...warnings.map((warning) => h('p', {}, warning)));
+function renderWarnings() {
+  const warnings = state.warnings.map((warning) => h('p', {}, tr(warning.code, warning.params)));
+  $('app-warnings').replaceChildren(...warnings);
   $('app-warnings').hidden = warnings.length === 0;
 }
 

@@ -1,17 +1,23 @@
 // Reads 3D models (STL, OBJ, 3MF) and measures volume, surface area and size.
 // Pure JavaScript without DOM access, used by the browser and by the tests.
-// Error messages are German because they are shown to the user as-is.
+// Errors and warnings carry a dictionary key (see i18n.js), so the interface can show them in any language.
 
+import { t } from './i18n.js';
 import { openZip } from './zip.js';
 
 export const SUPPORTED_FORMATS = ['stl', '3mf', 'obj'];
 export const MAX_FILE_BYTES = 512 * 1024 * 1024;
 
-/** Problem with the uploaded file; the message can be shown to the user directly. */
+/**
+ * Problem with the uploaded file. `code` is a dictionary key and `params` its placeholders;
+ * `message` holds the German text (for logs and tests). Show it with t(lang, error.code, error.params).
+ */
 export class ModelError extends Error {
-  constructor(message) {
-    super(message);
+  constructor(code, params = {}) {
+    super(t('de', code, params));
     this.name = 'ModelError';
+    this.code = code;
+    this.params = params;
   }
 }
 
@@ -22,7 +28,6 @@ const UNIT_TO_MM = { micron: 0.001, millimeter: 1, centimeter: 10, inch: 25.4, f
 const PRINTABLE_OBJECT_TYPES = new Set(['model', 'solidsupport']);
 const MAX_COMPONENT_DEPTH = 16;
 
-const countFormat = new Intl.NumberFormat('de-DE');
 const utf8 = new TextDecoder('utf-8');
 
 export function fileExtension(fileName) {
@@ -35,11 +40,9 @@ export function checkModelFileName(fileName) {
   const extension = fileExtension(fileName);
   if (SUPPORTED_FORMATS.includes(extension)) return extension;
   if (!extension) {
-    throw new ModelError('Die Datei hat keine Dateiendung. Unterstützt werden STL-, 3MF- und OBJ-Dateien.');
+    throw new ModelError('model.noExtension');
   }
-  throw new ModelError(
-    `Das Dateiformat „.${extension}“ wird nicht unterstützt. Bitte lade eine STL-, 3MF- oder OBJ-Datei hoch.`,
-  );
+  throw new ModelError('model.unsupported', { ext: extension });
 }
 
 /**
@@ -47,14 +50,15 @@ export function checkModelFileName(fileName) {
  * @param {ArrayBuffer|Uint8Array} data
  * @param {string} fileName  used to pick the format by its extension
  * @returns {Promise<{format: string, objectCount: number, triangleCount: number, volumeCm3: number,
- *   surfaceAreaCm2: number, sizeMm: {x: number, y: number, z: number}, warnings: string[]}>}
+ *   surfaceAreaCm2: number, sizeMm: {x: number, y: number, z: number}, warnings: {code: string, params: object}[]}>}
+ *   `format` is "stl-binary", "stl-ascii", "obj" or "3mf"; warnings are dictionary keys (see i18n.js).
  */
 export async function analyzeModelFile(data, fileName) {
   const extension = checkModelFileName(fileName);
   const bytes = toBytes(data);
-  if (bytes.byteLength === 0) throw new ModelError('Die Datei ist leer.');
+  if (bytes.byteLength === 0) throw new ModelError('model.empty');
   if (bytes.byteLength > MAX_FILE_BYTES) {
-    throw new ModelError(`Die Datei ist zu groß (maximal ${MAX_FILE_BYTES / 1024 / 1024} MB).`);
+    throw new ModelError('model.tooLarge', { max: MAX_FILE_BYTES / 1024 / 1024 });
   }
   let parsed;
   if (extension === 'stl') parsed = parseStl(bytes);
@@ -77,7 +81,7 @@ function measureModel({ format, meshes, unitScale = 1, objectCount = 1 }) {
     const result = measureMesh(mesh, bounds);
     if (result.triangles === 0) continue;
     if (!Number.isFinite(result.signedVolume) || !Number.isFinite(result.area)) {
-      throw new ModelError('Die Datei enthält ungültige Koordinaten (keine gültigen Zahlen).');
+      throw new ModelError('model.invalidCoordinates');
     }
     // Inverted or mirrored meshes have a negative signed volume.
     volume += Math.abs(result.signedVolume);
@@ -86,14 +90,12 @@ function measureModel({ format, meshes, unitScale = 1, objectCount = 1 }) {
     if (result.area > 0 && result.vectorArea / result.area > OPEN_MESH_TOLERANCE) openMeshes += 1;
   }
 
-  if (triangleCount === 0) throw new ModelError('Die Datei enthält keine Dreiecke.');
+  if (triangleCount === 0) throw new ModelError('model.noTriangles');
 
   const s = unitScale;
   const volumeMm3 = volume * s ** 3;
   if (!(volumeMm3 > 1e-6)) {
-    throw new ModelError(
-      'Das Modell hat kein messbares Volumen. Vermutlich ist es nur eine Fläche und kein geschlossener Körper.',
-    );
+    throw new ModelError('model.noVolume');
   }
   const sizeMm = {
     x: (bounds.max[0] - bounds.min[0]) * s,
@@ -103,19 +105,16 @@ function measureModel({ format, meshes, unitScale = 1, objectCount = 1 }) {
 
   const warnings = [];
   if (openMeshes > 0) {
-    warnings.push(
-      'Das Modell ist nicht geschlossen (Löcher oder falsch ausgerichtete Flächen). ' +
-        'Volumen und Preis können deutlich abweichen – am besten das Modell im Slicer reparieren.',
-    );
+    warnings.push({ code: 'warning.openMesh', params: {} });
   }
   const largest = Math.max(sizeMm.x, sizeMm.y, sizeMm.z);
   if (largest < 1) {
-    warnings.push('Das Modell ist kleiner als 1 mm. Wurde es vielleicht in Metern oder Zentimetern statt in Millimetern exportiert?');
+    warnings.push({ code: 'warning.tiny', params: {} });
   } else if (largest > 2000) {
-    warnings.push('Das Modell ist größer als 2 m. Wurde es vielleicht in einer anderen Einheit als Millimetern exportiert?');
+    warnings.push({ code: 'warning.huge', params: {} });
   }
   if (objectCount > 1) {
-    warnings.push(`Die Datei enthält ${countFormat.format(objectCount)} Objekte – berechnet wird alles zusammen als ein Druck.`);
+    warnings.push({ code: 'warning.multipleObjects', params: { count: objectCount } });
   }
 
   return {
@@ -236,29 +235,26 @@ function parseStl(bytes) {
   // Binary STL: 80-byte header, triangle count, 50 bytes per triangle.
   // Checked first because many binary files also start with "solid" in their header.
   if (size >= 84 && 84 + view.getUint32(80, true) * 50 === size) {
-    return { format: 'STL (binär)', meshes: [parseBinaryStl(view, view.getUint32(80, true))] };
+    return { format: 'stl-binary', meshes: [parseBinaryStl(view, view.getUint32(80, true))] };
   }
   if (looksLikeAsciiStl(bytes)) {
-    return { format: 'STL (ASCII)', meshes: [parseAsciiStl(bytes)] };
+    return { format: 'stl-ascii', meshes: [parseAsciiStl(bytes)] };
   }
   if (size < 84) {
-    throw new ModelError('Die Datei ist keine gültige STL-Datei (weder Binär- noch Text-STL erkannt).');
+    throw new ModelError('stl.invalid');
   }
   const count = view.getUint32(80, true);
-  if (count === 0) throw new ModelError('Die STL-Datei enthält keine Dreiecke.');
+  if (count === 0) throw new ModelError('stl.noTriangles');
   if (count > MAX_STL_TRIANGLES) {
-    throw new ModelError('Die Datei ist keine gültige STL-Datei (weder Binär- noch Text-STL erkannt).');
+    throw new ModelError('stl.invalid');
   }
   const expected = 84 + count * 50;
   if (expected > size) {
     const available = Math.max(0, Math.floor((size - 84) / 50));
-    throw new ModelError(
-      `Die STL-Datei ist beschädigt oder unvollständig: Laut Dateikopf enthält sie ${countFormat.format(count)} Dreiecke, ` +
-        `die Daten reichen aber nur für ${countFormat.format(available)}.`,
-    );
+    throw new ModelError('stl.truncated', { count, available });
   }
   // A few exporters append extra bytes after the triangle data – those are ignored.
-  return { format: 'STL (binär)', meshes: [parseBinaryStl(view, count)] };
+  return { format: 'stl-binary', meshes: [parseBinaryStl(view, count)] };
 }
 
 function parseBinaryStl(view, count) {
@@ -292,7 +288,7 @@ function parseAsciiStl(bytes) {
 
   const addPolygon = (coords) => {
     const n = coords.length / 3;
-    if (n < 3) throw new ModelError('Die STL-Datei ist beschädigt: Eine Fläche hat weniger als drei Eckpunkte.');
+    if (n < 3) throw new ModelError('stl.badFace');
     for (let i = 1; i < n - 1; i++) {
       positions.push3(coords[0], coords[1], coords[2]);
       positions.push3(coords[3 * i], coords[3 * i + 1], coords[3 * i + 2]);
@@ -311,7 +307,7 @@ function parseAsciiStl(bytes) {
     const y = Number(match[2]);
     const z = Number(match[3]);
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
-      throw new ModelError(`Die STL-Datei enthält ungültige Koordinaten: „${match[0].trim()}“.`);
+      throw new ModelError('stl.badCoordinates', { text: match[0].trim() });
     }
     loop.push(x, y, z);
   }
@@ -320,10 +316,10 @@ function parseAsciiStl(bytes) {
     if (!sawEndloop && loop.length % 9 === 0) {
       for (const value of loop) positions.push(value); // no "endloop" at all: plain triangle list
     } else {
-      throw new ModelError('Die STL-Datei ist unvollständig: Die letzte Fläche ist nicht abgeschlossen.');
+      throw new ModelError('stl.unfinished');
     }
   }
-  if (positions.length === 0) throw new ModelError('Die STL-Datei enthält keine Dreiecke.');
+  if (positions.length === 0) throw new ModelError('stl.noTriangles');
   return { positions: positions.toArray(), indices: null, transform: null };
 }
 
@@ -352,14 +348,14 @@ function parseObj(bytes) {
       const y = Number(parts[2]);
       const z = Number(parts[3]);
       if (parts.length < 4 || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
-        throw new ModelError(`Die OBJ-Datei ist beschädigt: ungültiger Eckpunkt in Zeile ${lineNumber}.`);
+        throw new ModelError('obj.badVertex', { line: lineNumber });
       }
       vertices.push3(x, y, z);
     } else if (keyword === 'f ' || keyword === 'f\t') {
       const parts = line.split(/\s+/);
       const count = parts.length - 1;
       if (count < 3) {
-        throw new ModelError(`Die OBJ-Datei ist beschädigt: Fläche mit weniger als drei Eckpunkten in Zeile ${lineNumber}.`);
+        throw new ModelError('obj.badFace', { line: lineNumber });
       }
       const vertexCount = vertices.length / 3;
       const refs = new Array(count);
@@ -369,7 +365,7 @@ function parseObj(bytes) {
         const raw = Number(slash === -1 ? token : token.slice(0, slash));
         const index = raw > 0 ? raw - 1 : vertexCount + raw; // negative = relative to the end
         if (!Number.isInteger(raw) || raw === 0 || index < 0) {
-          throw new ModelError(`Die OBJ-Datei verweist auf einen nicht vorhandenen Eckpunkt („${token}“, Zeile ${lineNumber}).`);
+          throw new ModelError('obj.badReference', { token, line: lineNumber });
         }
         refs[i] = index;
       }
@@ -377,15 +373,15 @@ function parseObj(bytes) {
     }
   }
 
-  if (indices.length === 0) throw new ModelError('Die OBJ-Datei enthält keine Flächen.');
+  if (indices.length === 0) throw new ModelError('obj.noFaces');
   const vertexCount = vertices.length / 3;
   const indexArray = indices.toArray();
   for (let i = 0; i < indexArray.length; i++) {
     if (indexArray[i] >= vertexCount) {
-      throw new ModelError('Die OBJ-Datei verweist auf Eckpunkte, die nicht in der Datei stehen.');
+      throw new ModelError('obj.missingVertices');
     }
   }
-  return { format: 'OBJ', meshes: [{ positions: vertices.toArray(), indices: indexArray, transform: null }] };
+  return { format: 'obj', meshes: [{ positions: vertices.toArray(), indices: indexArray, transform: null }] };
 }
 
 // ---------------------------------------------------------------------------
@@ -396,22 +392,22 @@ async function parse3mf(bytes) {
   try {
     zip = openZip(bytes);
   } catch {
-    throw new ModelError('Die 3MF-Datei ist beschädigt: Sie ist kein gültiges ZIP-Archiv.');
+    throw new ModelError('3mf.notZip');
   }
 
   const rootPath = await findRootModelPath(zip);
-  if (!rootPath) throw new ModelError('In der 3MF-Datei wurde kein 3D-Modell gefunden.');
+  if (!rootPath) throw new ModelError('3mf.noModel');
 
   const models = new Map();
   const loadModel = async (partPath) => {
     const entry = zip.find(partPath);
-    if (!entry) throw new ModelError(`Die 3MF-Datei ist unvollständig: Der Teil „${partPath}“ fehlt.`);
+    if (!entry) throw new ModelError('3mf.missingPart', { part: partPath });
     if (models.has(entry)) return models.get(entry);
     let xml;
     try {
       xml = await zip.readText(entry);
     } catch {
-      throw new ModelError('Die 3MF-Datei ist beschädigt: Ein Teil lässt sich nicht entpacken.');
+      throw new ModelError('3mf.unpack');
     }
     const model = parseModelXml(xml);
     models.set(entry, model);
@@ -420,16 +416,16 @@ async function parse3mf(bytes) {
 
   const root = await loadModel(rootPath);
   const unitScale = UNIT_TO_MM[root.unit];
-  if (unitScale === undefined) throw new ModelError(`Die 3MF-Datei verwendet die unbekannte Einheit „${root.unit}“.`);
+  if (unitScale === undefined) throw new ModelError('3mf.unknownUnit', { unit: root.unit });
 
   const meshes = [];
   const addObject = async (partPath, objectId, transform, depth) => {
     if (depth > MAX_COMPONENT_DEPTH) {
-      throw new ModelError('Die 3MF-Datei ist fehlerhaft: Die Bauteile sind zu tief verschachtelt.');
+      throw new ModelError('3mf.tooDeep');
     }
     const model = await loadModel(partPath);
     const object = model.objects.get(objectId);
-    if (!object) throw new ModelError(`Die 3MF-Datei ist fehlerhaft: Das Objekt mit der ID „${objectId}“ fehlt.`);
+    if (!object) throw new ModelError('3mf.missingObject', { id: objectId });
     if (!PRINTABLE_OBJECT_TYPES.has(object.type)) return; // support/surface/other objects are not part of the print
     if (object.mesh) meshes.push({ ...object.mesh, transform });
     for (const component of object.components) {
@@ -443,8 +439,8 @@ async function parse3mf(bytes) {
     objectCount += 1;
     await addObject(item.path ?? rootPath, item.objectId, item.transform, 0);
   }
-  if (objectCount === 0) throw new ModelError('Die 3MF-Datei enthält keine druckbaren Objekte.');
-  return { format: '3MF', meshes, unitScale, objectCount };
+  if (objectCount === 0) throw new ModelError('3mf.noPrintable');
+  return { format: '3mf', meshes, unitScale, objectCount };
 }
 
 async function findRootModelPath(zip) {
@@ -515,7 +511,7 @@ function parseModelXml(source) {
         }
         const attributes = parseAttributes(match[4]);
         const id = attributes.id !== undefined ? decodeEntities(attributes.id).trim() : '';
-        if (!id) throw new ModelError('Die 3MF-Datei ist fehlerhaft: Ein Objekt hat keine ID.');
+        if (!id) throw new ModelError('3mf.objectWithoutId');
         object = { id, type: (attributes.type ?? 'model').toLowerCase(), mesh: null, components: [] };
         result.objects.set(id, object);
         if (selfClosing) object = null;
@@ -539,7 +535,7 @@ function parseModelXml(source) {
         readTriple(match[4], VERTEX_ATTRIBUTES, 'x', 'y', 'z');
         const [x, y, z] = triple;
         if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
-          throw new ModelError('Die 3MF-Datei enthält ungültige Koordinaten.');
+          throw new ModelError('3mf.badCoordinates');
         }
         vertices.push3(x, y, z);
         break;
@@ -579,7 +575,7 @@ function parseModelXml(source) {
     }
   }
 
-  if (!seenModel) throw new ModelError('Die 3MF-Datei enthält fehlerhafte Modelldaten (kein <model>-Element gefunden).');
+  if (!seenModel) throw new ModelError('3mf.noModelElement');
   return result;
 }
 
@@ -609,7 +605,7 @@ function finishMesh(vertices, triangles) {
   const vertexCount = positions.length / 3;
   for (let i = 0; i < indices.length; i++) {
     if (indices[i] >= vertexCount) {
-      throw new ModelError('Die 3MF-Datei ist fehlerhaft: Ein Dreieck verweist auf einen nicht vorhandenen Eckpunkt.');
+      throw new ModelError('3mf.missingVertex');
     }
   }
   return { positions, indices };
@@ -617,14 +613,14 @@ function finishMesh(vertices, triangles) {
 
 function toIndex(index) {
   if (!Number.isInteger(index) || index < 0) {
-    throw new ModelError('Die 3MF-Datei ist fehlerhaft: Ein Dreieck hat ungültige Eckpunkt-Nummern.');
+    throw new ModelError('3mf.badTriangle');
   }
   return index;
 }
 
 function requireObjectId(value) {
   const id = value === undefined ? '' : decodeEntities(value).trim();
-  if (!id) throw new ModelError('Die 3MF-Datei ist fehlerhaft: Ein Verweis auf ein Objekt hat keine ID.');
+  if (!id) throw new ModelError('3mf.referenceWithoutId');
   return id;
 }
 
@@ -640,7 +636,7 @@ function parseTransform(text) {
   if (text === undefined) return null;
   const values = text.trim().split(/\s+/).map(Number);
   if (values.length !== 12 || !values.every(Number.isFinite)) {
-    throw new ModelError('Die 3MF-Datei enthält eine ungültige Transformationsmatrix.');
+    throw new ModelError('3mf.badTransform');
   }
   const identity = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
   return values.every((value, i) => value === identity[i]) ? null : values;

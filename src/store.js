@@ -1,17 +1,20 @@
 // Durable storage for the settings: plain JSON files in the data directory.
-//   settings.json    long-term settings (printers, materials, costs)
+//   settings.json    long-term settings (language, printers, materials, costs, labour rules)
 //   last-print.json  last used per-print values (printer, material, layer height, infill, support)
 // Files are written atomically (temp file + rename), so a crash never leaves half a file behind.
+// Methods take the language of their error messages as the last argument ('de' or 'en').
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_WEAR_PER_HOUR, defaultLastPrint, defaultSettings } from './defaults.js';
+import { DEFAULT_PRINTER_NAMES, DEFAULT_WEAR_PER_HOUR, defaultLastPrint, defaultSettings } from './defaults.js';
+import { normalizeLanguage, t } from '../public/lib/i18n.js';
 import {
   GENERAL_KEYS,
   describeErrors,
   isValidId,
   validateGeneral,
+  validateLanguage,
   validateLastPrint,
   validateMaterial,
   validatePrinter,
@@ -27,30 +30,22 @@ export class StoreError extends Error {
 }
 
 const KINDS = {
-  printers: {
-    validate: validatePrinter,
-    lastPrintKey: 'printerId',
-    notFound: 'Dieser Drucker existiert nicht (mehr).',
-    duplicate: 'Es gibt bereits einen Drucker mit diesem Namen.',
-    lastOne: 'Der letzte Drucker kann nicht gelöscht werden. Lege zuerst einen weiteren an.',
-  },
-  materials: {
-    validate: validateMaterial,
-    lastPrintKey: 'materialId',
-    notFound: 'Dieses Material existiert nicht (mehr).',
-    duplicate: 'Es gibt bereits ein Material mit diesem Namen.',
-    lastOne: 'Das letzte Material kann nicht gelöscht werden. Lege zuerst ein weiteres an.',
-  },
+  printers: { validate: validatePrinter, lastPrintKey: 'printerId' },
+  materials: { validate: validateMaterial, lastPrintKey: 'materialId' },
 };
 
-export function createStore(dataDir) {
+/**
+ * @param {string} dataDir
+ * @param {{logLanguage?: 'de'|'en'}} [options] language of console messages
+ */
+export function createStore(dataDir, { logLanguage = 'de' } = {}) {
   fs.mkdirSync(dataDir, { recursive: true });
   const settingsFile = path.join(dataDir, 'settings.json');
   const lastPrintFile = path.join(dataDir, 'last-print.json');
-  const warnings = [];
+  const warnings = []; // { code, params } – translated by the interface
 
-  let settings = loadFile(settingsFile, parseSettingsFile, defaultSettings, warnings);
-  let lastPrint = loadFile(lastPrintFile, parseLastPrintFile, () => defaultLastPrint(settings), warnings);
+  let settings = loadFile(settingsFile, parseSettingsFile, defaultSettings, warnings, logLanguage);
+  let lastPrint = loadFile(lastPrintFile, parseLastPrintFile, () => defaultLastPrint(settings), warnings, logLanguage);
 
   function saveSettings(next) {
     writeJsonAtomic(settingsFile, next);
@@ -72,25 +67,23 @@ export function createStore(dataDir) {
     };
   }
 
-  function kindOf(kind) {
+  function kindOf(kind, lang) {
     const config = KINDS[kind];
-    if (!config) throw new StoreError(404, 'Unbekannte Art von Eintrag.');
+    if (!config) throw new StoreError(404, t(lang, 'store.unknownKind'));
     return config;
   }
 
-  function validated(config, input) {
-    const result = config.validate(input);
-    if (result.errors) throw new StoreError(400, describeErrors(result.errors), result.errors);
+  function validated(config, input, lang) {
+    const result = config.validate(input, lang);
+    if (result.errors) throw new StoreError(400, describeErrors(result.errors, lang), result.errors);
     return result.value;
   }
 
-  function assertUniqueName(kind, name, exceptId = null) {
-    const wanted = name.toLocaleLowerCase('de-DE');
-    const clash = settings[kind].some(
-      (item) => item.id !== exceptId && item.name.toLocaleLowerCase('de-DE') === wanted,
-    );
+  function assertUniqueName(kind, name, lang, exceptId = null) {
+    const wanted = name.toLocaleLowerCase();
+    const clash = settings[kind].some((item) => item.id !== exceptId && item.name.toLocaleLowerCase() === wanted);
     if (clash) {
-      const message = KINDS[kind].duplicate;
+      const message = t(lang, `store.duplicate.${kind}`);
       throw new StoreError(409, message, { name: message });
     }
   }
@@ -98,37 +91,58 @@ export function createStore(dataDir) {
   return {
     paths: { settings: settingsFile, lastPrint: lastPrintFile },
 
+    /** Chosen interface language, or null if none was chosen yet (the browser's language is used). */
+    language() {
+      return settings.language;
+    },
+
     getState() {
       return {
         settings: structuredClone(settings),
         lastPrint: effectiveLastPrint(),
-        warnings: [...warnings],
+        warnings: structuredClone(warnings),
         storage: { dataDir, settingsFile, lastPrintFile },
       };
     },
 
-    updateGeneral(input) {
-      const result = validateGeneral(input);
-      if (result.errors) throw new StoreError(400, describeErrors(result.errors), result.errors);
+    updateGeneral(input, lang = 'de') {
+      const result = validateGeneral(input, lang);
+      if (result.errors) throw new StoreError(400, describeErrors(result.errors, lang), result.errors);
       saveSettings({ ...settings, ...result.value });
       return structuredClone(settings);
     },
 
-    addItem(kind, input) {
-      const config = kindOf(kind);
-      const value = validated(config, input);
-      assertUniqueName(kind, value.name);
+    /** Switches the interface language. The untouched example printer is renamed to match. */
+    setLanguage(input, lang = 'de') {
+      const result = validateLanguage(input, lang);
+      if (result.errors) throw new StoreError(400, describeErrors(result.errors, lang), result.errors);
+      const language = result.value;
+      const exampleNames = Object.values(DEFAULT_PRINTER_NAMES);
+      const target = DEFAULT_PRINTER_NAMES[language];
+      const printers = settings.printers.map((printer) => {
+        const isExample = exampleNames.includes(printer.name) && printer.name !== target;
+        const taken = settings.printers.some((other) => other !== printer && other.name === target);
+        return isExample && !taken ? { ...printer, name: target } : printer;
+      });
+      saveSettings({ ...settings, language, printers });
+      return structuredClone(settings);
+    },
+
+    addItem(kind, input, lang = 'de') {
+      const config = kindOf(kind, lang);
+      const value = validated(config, input, lang);
+      assertUniqueName(kind, value.name, lang);
       const item = { id: crypto.randomUUID(), ...value };
       saveSettings({ ...settings, [kind]: [...settings[kind], item] });
       return { settings: structuredClone(settings), item: { ...item } };
     },
 
-    updateItem(kind, id, input) {
-      const config = kindOf(kind);
+    updateItem(kind, id, input, lang = 'de') {
+      const config = kindOf(kind, lang);
       const index = settings[kind].findIndex((item) => item.id === id);
-      if (index === -1) throw new StoreError(404, config.notFound);
-      const value = validated(config, input);
-      assertUniqueName(kind, value.name, id);
+      if (index === -1) throw new StoreError(404, t(lang, `store.notFound.${kind}`));
+      const value = validated(config, input, lang);
+      assertUniqueName(kind, value.name, lang, id);
       const item = { id, ...value };
       const list = [...settings[kind]];
       list[index] = item;
@@ -136,19 +150,19 @@ export function createStore(dataDir) {
       return { settings: structuredClone(settings), item: { ...item } };
     },
 
-    deleteItem(kind, id) {
-      const config = kindOf(kind);
+    deleteItem(kind, id, lang = 'de') {
+      const config = kindOf(kind, lang);
       const list = settings[kind];
-      if (!list.some((item) => item.id === id)) throw new StoreError(404, config.notFound);
-      if (list.length <= 1) throw new StoreError(409, config.lastOne);
+      if (!list.some((item) => item.id === id)) throw new StoreError(404, t(lang, `store.notFound.${kind}`));
+      if (list.length <= 1) throw new StoreError(409, t(lang, `store.lastOne.${kind}`));
       saveSettings({ ...settings, [kind]: list.filter((item) => item.id !== id) });
       if (lastPrint[config.lastPrintKey] === id) saveLastPrint(effectiveLastPrint());
       return { settings: structuredClone(settings), lastPrint: effectiveLastPrint() };
     },
 
-    setLastPrint(input) {
-      const result = validateLastPrint(input);
-      if (result.errors) throw new StoreError(400, describeErrors(result.errors), result.errors);
+    setLastPrint(input, lang = 'de') {
+      const result = validateLastPrint(input, lang);
+      if (result.errors) throw new StoreError(400, describeErrors(result.errors, lang), result.errors);
       saveLastPrint(result.value);
       return effectiveLastPrint();
     },
@@ -160,9 +174,9 @@ export function createStore(dataDir) {
 
 /**
  * Loads a JSON file. A missing file is created with defaults. A broken file is kept as
- * "<name>.defekt-<time>" (never overwritten) and replaced by defaults, with a warning for the UI.
+ * "<name>.broken-<time>" (never overwritten) and replaced by defaults, with a warning for the UI.
  */
-function loadFile(file, parse, makeDefault, warnings) {
+function loadFile(file, parse, makeDefault, warnings, logLanguage) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');
@@ -174,27 +188,33 @@ function loadFile(file, parse, makeDefault, warnings) {
   }
 
   try {
-    const { value, changed } = parse(JSON.parse(text));
+    const { value, changed } = parse(JSON.parse(text), logLanguage);
     if (changed) writeJsonAtomic(file, value);
     return value;
   } catch (error) {
-    const backup = `${file}.defekt-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    const backup = `${file}.broken-${new Date().toISOString().replace(/[:.]/g, '-')}`;
     fs.renameSync(file, backup);
     const value = makeDefault();
     writeJsonAtomic(file, value);
-    const message =
-      `Die Datei „${path.basename(file)}“ war beschädigt (${error.message}) und wurde als ` +
-      `„${path.basename(backup)}“ gesichert. Es gelten wieder die Standardwerte.`;
-    warnings.push(message);
-    console.warn(message);
+    const warning = {
+      code: 'warning.brokenFile',
+      params: { file: path.basename(file), backup: path.basename(backup), reason: error.message },
+    };
+    warnings.push(warning);
+    console.warn(t(logLanguage, warning.code, warning.params));
     return value;
   }
 }
 
-function parseSettingsFile(data) {
-  if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error('kein JSON-Objekt');
+function parseSettingsFile(data, lang) {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error('not a JSON object');
   const defaults = defaultSettings();
   let changed = false;
+
+  // Files from before the language switch were used with the German interface.
+  let language = data.language === undefined ? 'de' : data.language;
+  if (language !== null && !normalizeLanguage(language)) language = null;
+  if (language !== data.language) changed = true;
 
   // Values added in later versions may be missing in older files: fill them in.
   const generalInput = {};
@@ -206,22 +226,22 @@ function parseSettingsFile(data) {
       generalInput[key] = data[key];
     }
   }
-  const general = validateGeneral(generalInput);
-  if (general.errors) throw new Error(describeErrors(general.errors));
+  const general = validateGeneral(generalInput, lang);
+  if (general.errors) throw new Error(describeErrors(general.errors, lang));
 
   // Printers saved before wear costs existed get the default wear cost.
-  const printers = parseItems(data.printers, validatePrinter, 'printers', { wearPerHour: DEFAULT_WEAR_PER_HOUR });
-  const materials = parseItems(data.materials, validateMaterial, 'materials');
+  const printers = parseItems(data.printers, validatePrinter, 'printers', lang, { wearPerHour: DEFAULT_WEAR_PER_HOUR });
+  const materials = parseItems(data.materials, validateMaterial, 'materials', lang);
   changed ||= printers.changed || materials.changed;
 
   return {
-    value: { version: 1, ...general.value, printers: printers.items, materials: materials.items },
+    value: { version: 1, language, ...general.value, printers: printers.items, materials: materials.items },
     changed,
   };
 }
 
-function parseItems(list, validate, key, fillMissing = {}) {
-  if (!Array.isArray(list)) throw new Error(`„${key}“ fehlt oder ist keine Liste`);
+function parseItems(list, validate, key, lang, fillMissing = {}) {
+  if (!Array.isArray(list)) throw new Error(`"${key}" is missing or not a list`);
   const ids = new Set();
   let changed = false;
   const items = list.map((original, index) => {
@@ -232,8 +252,8 @@ function parseItems(list, validate, key, fillMissing = {}) {
         changed = true;
       }
     }
-    const result = validate(entry);
-    if (result.errors) throw new Error(`${key}[${index}]: ${describeErrors(result.errors)}`);
+    const result = validate(entry, lang);
+    if (result.errors) throw new Error(`${key}[${index}]: ${describeErrors(result.errors, lang)}`);
     let id = entry.id;
     if (!isValidId(id) || ids.has(id)) {
       id = crypto.randomUUID(); // hand-edited entry without (unique) id
@@ -245,11 +265,11 @@ function parseItems(list, validate, key, fillMissing = {}) {
   return { items, changed };
 }
 
-function parseLastPrintFile(data) {
-  if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error('kein JSON-Objekt');
+function parseLastPrintFile(data, lang) {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error('not a JSON object');
   const defaults = defaultLastPrint({ printers: [], materials: [] });
-  const result = validateLastPrint({ ...defaults, ...data });
-  if (result.errors) throw new Error(describeErrors(result.errors));
+  const result = validateLastPrint({ ...defaults, ...data }, lang);
+  if (result.errors) throw new Error(describeErrors(result.errors, lang));
   return { value: result.value, changed: false };
 }
 

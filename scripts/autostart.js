@@ -1,13 +1,14 @@
-// Startet den Preisrechner automatisch beim Anmelden (macOS LaunchAgent).
-//   npm run autostart:install    einrichten und sofort starten
-//   npm run autostart:uninstall  wieder entfernen
-//   npm run autostart:status     prüfen, ob er läuft
+// Starts the price calculator automatically when you log in (macOS LaunchAgent).
+//   npm run autostart:install    set up and start right away
+//   npm run autostart:uninstall  remove again
+//   npm run autostart:status     check whether it runs
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { detectLanguage, t } from '../public/lib/i18n.js';
 
 const LABEL = 'de.fdm-preisrechner';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -15,6 +16,7 @@ const PLIST = path.join(os.homedir(), 'Library', 'LaunchAgents', `${LABEL}.plist
 const LOG = path.join(os.homedir(), 'Library', 'Logs', 'fdm-preisrechner.log');
 const DOMAIN = `gui/${process.getuid()}`;
 const URL = 'http://localhost:3141';
+const lang = detectLanguage([process.env.LC_ALL, process.env.LC_MESSAGES, process.env.LANG]);
 
 const xml = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -37,7 +39,7 @@ async function isRunning() {
 }
 
 async function install() {
-  if (process.platform !== 'darwin') throw new Error('Der Autostart ist nur für macOS eingerichtet.');
+  if (process.platform !== 'darwin') throw new Error(t(lang, 'autostart.macOnly'));
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -65,27 +67,27 @@ async function install() {
   fs.mkdirSync(path.dirname(LOG), { recursive: true });
   launchctl('bootout', `${DOMAIN}/${LABEL}`); // replace an older installation
   fs.writeFileSync(PLIST, plist);
-  if (!launchctl('bootstrap', DOMAIN, PLIST)) throw new Error('launchctl konnte den Autostart nicht laden.');
+  if (!launchctl('bootstrap', DOMAIN, PLIST)) throw new Error(t(lang, 'autostart.loadFailed'));
 
   for (let i = 0; i < 20 && !(await isRunning()); i++) await new Promise((r) => setTimeout(r, 250));
   if (!(await isRunning())) {
-    throw new Error(`Der Autostart ist eingerichtet, aber der Server antwortet nicht. Details: ${LOG}`);
+    throw new Error(t(lang, 'autostart.notResponding', { log: LOG }));
   }
-  console.log(`Autostart eingerichtet. Der Preisrechner läuft jetzt dauerhaft unter ${URL}`);
-  console.log(`Startet automatisch beim Anmelden. Log: ${LOG}`);
+  console.log(t(lang, 'autostart.installed', { url: URL }));
+  console.log(t(lang, 'autostart.installedHint', { log: LOG }));
 }
 
 function uninstall() {
   launchctl('bootout', `${DOMAIN}/${LABEL}`);
   fs.rmSync(PLIST, { force: true });
-  console.log('Autostart entfernt. Starten geht weiter mit npm start.');
+  console.log(t(lang, 'autostart.removed'));
 }
 
 async function status() {
   const installed = fs.existsSync(PLIST);
-  console.log(`Autostart: ${installed ? 'eingerichtet' : 'nicht eingerichtet'}`);
-  console.log(`Server: ${(await isRunning()) ? `läuft (${URL})` : 'läuft nicht'}`);
-  if (installed) console.log(`Log: ${LOG}`);
+  console.log(t(lang, installed ? 'autostart.statusInstalled' : 'autostart.statusMissing'));
+  console.log((await isRunning()) ? t(lang, 'autostart.serverRunning', { url: URL }) : t(lang, 'autostart.serverStopped'));
+  if (installed) console.log(t(lang, 'autostart.log', { log: LOG }));
 }
 
 const command = process.argv[2];

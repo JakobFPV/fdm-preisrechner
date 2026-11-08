@@ -140,6 +140,37 @@ describe('server', () => {
     assert.equal(res.status, 400);
   });
 
+  it('answers in the language the page asks for', async () => {
+    const english = await json(app.base, 'POST', '/api/materials', { name: '', pricePerKg: 'x', densityGPerCm3: 1 },
+      { 'Accept-Language': 'en' });
+    assert.equal(english.status, 400);
+    const body = await english.json();
+    assert.equal(body.errors.name, 'Please enter a name.');
+    assert.match(body.error, /^Name: Please enter a name\. Price: Please enter a number\.$/);
+
+    const german = await json(app.base, 'DELETE', '/api/materials/gibtsnicht', undefined, { 'Accept-Language': 'de-DE,de;q=0.9' });
+    assert.equal((await german.json()).error, 'Dieses Material existiert nicht (mehr).');
+    assert.equal(await (await fetch(`${app.base}/nope.html`, { headers: { 'Accept-Language': 'en-GB' } })).text(), 'Not found');
+  });
+
+  it('stores the language and uses it when the request does not say', async () => {
+    let res = await json(app.base, 'PUT', '/api/settings/language', { language: 'en' });
+    assert.equal(res.status, 200);
+    const { settings } = await res.json();
+    assert.equal(settings.language, 'en');
+    assert.equal(settings.printers.find((p) => p.id === 'beispieldrucker').name, 'Example printer');
+
+    res = await fetch(`${app.base}/api/unknown`); // no Accept-Language header
+    assert.equal((await res.json()).error, 'Unknown API address.');
+
+    res = await json(app.base, 'PUT', '/api/settings/language', { language: 'klingon' }, { 'Accept-Language': 'en' });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).errors.language, 'Unknown language.');
+
+    res = await json(app.base, 'PUT', '/api/settings/language', { language: 'de' });
+    assert.equal((await res.json()).settings.printers.find((p) => p.id === 'beispieldrucker').name, 'Beispieldrucker');
+  });
+
   it('keeps settings and last print values across a server restart', async () => {
     await json(app.base, 'POST', '/api/materials', { name: 'PETG CF', pricePerKg: 35, densityGPerCm3: 1.3 });
     const general = await json(app.base, 'PUT', '/api/settings/general', {

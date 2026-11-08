@@ -1,14 +1,21 @@
-# FDM-Preisrechner
+# FDM Price Calculator
 
-Lokale Web-App, die aus einem 3D-Modell (STL, 3MF oder OBJ) schätzt, zu welchem Preis du einen FDM-Druck anbieten kannst – ohne Slicer, mit nachvollziehbarer Rechnung.
+A local web app that estimates the retail price of an FDM 3D print from an STL, 3MF or OBJ file – no slicer needed, with a calculation you can follow step by step.
 
-> **English:** A local web app that estimates the retail price of an FDM 3D print from an STL, 3MF or OBJ file: material, electricity, machine wear and labour, plus your margin. The interface is in German. No dependencies; everything runs and is stored on your own computer.
+*Deutsche Anleitung: [README.de.md](README.de.md)*
 
-![Screenshot des FDM-Preisrechners](docs/screenshot.png)
+![Screenshot of the FDM Price Calculator](docs/screenshot.png)
+
+- **Drop in a model** (STL, 3MF or OBJ) and see its size, volume and surface right away.
+- **Pick printer, material and print settings** – the price updates instantly.
+- **Covers all costs:** material, electricity, machine wear and labour, plus your profit margin.
+- **Quantity and build plates:** price several copies of the same file; labour is calculated automatically.
+- **English and German:** switch the language in the top right corner.
+- **Runs only on your computer.** No account, no cloud, no dependencies. Your settings are stored locally.
 
 ## Installation
 
-Voraussetzung ist [Node.js](https://nodejs.org) ab Version 22. Weitere Pakete braucht es nicht, also auch kein `npm install`.
+You need [Node.js](https://nodejs.org) 22 or newer. Nothing else – no `npm install`.
 
 ```bash
 git clone https://github.com/JakobFPV/fdm-preisrechner.git
@@ -16,122 +23,124 @@ cd fdm-preisrechner
 npm start
 ```
 
-Ohne Git: auf GitHub *Code → Download ZIP*, entpacken und im entpackten Ordner `npm start` ausführen.
+Without Git: on GitHub choose *Code → Download ZIP*, unpack it and run `npm start` in the unpacked folder.
 
-Getestet unter macOS. `npm start` braucht nur Node.js und sollte deshalb auch unter Windows und Linux laufen. Start per Doppelklick und Autostart gibt es nur für macOS.
+Tested on macOS. `npm start` only needs Node.js, so it should also work on Windows and Linux. Starting by double-click and the autostart are macOS only.
 
-## Starten
+## Starting
 
 ```bash
 npm start
 ```
 
-Der Rechner läuft dann unter **http://localhost:3141** und öffnet sich im Standardbrowser. Beenden mit `Ctrl+C` im Terminal.
+The calculator then runs at **http://localhost:3141** and opens in your default browser. Stop it with `Ctrl+C` in the terminal.
 
-- **Ohne Terminal (macOS):** Doppelklick auf `start.command`. Beenden: Terminalfenster schließen. Wurde der Ordner als ZIP heruntergeladen, blockiert macOS das Skript beim ersten Mal: dann Rechtsklick → *Öffnen*.
-- **Anderer Port:** `PORT=3142 npm start`
-- Läuft er schon, öffnet ein zweiter Start einfach die Seite.
+- **Without a terminal (macOS):** double-click `start.command`. To stop it, close the Terminal window. If you downloaded the folder as a ZIP, macOS blocks the script the first time: right-click it → *Open*.
+- **Another port:** `PORT=3142 npm start`
+- If it is already running, starting it again simply opens the page.
+- It is only reachable from your own computer (127.0.0.1), not from the network.
 
-### Immer verfügbar, wie eine App (macOS)
+### Always available, like an app (macOS)
 
 ```bash
 npm run autostart:install
 ```
 
-Der Preisrechner läuft dann dauerhaft im Hintergrund und startet beim Anmelden automatisch. Für ein App-Fenster ohne Browserleisten http://localhost:3141 öffnen und dann:
+The calculator then runs in the background and starts automatically when you log in. For an app window without browser bars, open http://localhost:3141 and then:
 
-- **Safari:** *Ablage → Zum Dock hinzufügen*. Die App liegt danach im Dock und unter `~/Programme`.
-- **Brave:** *Menü → Speichern und teilen → Seite als App installieren*.
+- **Safari:** *File → Add to Dock*. The app appears in the Dock and in `~/Applications`.
+- **Chrome / Brave:** browser menu → *Save and share* (in Chrome: *Cast, save and share*) → *Install page as app*.
 
-Prüfen mit `npm run autostart:status`, entfernen mit `npm run autostart:uninstall`. Das Log liegt unter `~/Library/Logs/fdm-preisrechner.log`. Nach dem Verschieben des Projektordners `npm run autostart:install` noch einmal ausführen.
+Check it with `npm run autostart:status`, remove it with `npm run autostart:uninstall`. The log is at `~/Library/Logs/fdm-preisrechner.log`. After moving the project folder, run `npm run autostart:install` again.
 
-Liegt der Projektordner auf dem Schreibtisch oder in „Dokumente“, kann macOS dem Hintergrunddienst den Zugriff verweigern („Operation not permitted“ im Log). Dann den Ordner z. B. in den Benutzerordner verschieben und den Autostart neu einrichten.
-- Erreichbar ist er nur auf diesem Computer (127.0.0.1), nicht im Netzwerk.
+If the project folder is on the Desktop or in Documents, macOS may block the background service ("Operation not permitted" in the log). Move the folder, for example to your home folder, and set up the autostart again.
 
-## Bedienung
+## Usage
 
-1. Modell in das Feld ziehen (oder klicken und Datei wählen). Abmessungen, Volumen und Oberfläche erscheinen sofort.
-2. Drucker, Material, Schichthöhe, Füllung und Stützstrukturen wählen. Der Verkaufspreis rechts ändert sich bei jeder Eingabe.
-3. **Stückzahl** (gleiche Teile aus derselben Datei) und **Druckplatten** einstellen. Die Arbeitszeit wird daraus automatisch berechnet.
-4. **Grundeinstellungen** (unten, eingeklappt): Drucker, Materialien, Strompreis, Stundenlohn, Gewinnmarge, Stützmaterial-Zuschlag, Wandstärke und die Regeln für die Arbeitszeit anlegen und ändern.
+1. Drop a model onto the page (or click and choose a file). Size, volume and surface appear right away.
+2. Choose printer, material, layer height, infill and supports. The retail price on the right updates with every change.
+3. Set the **quantity** (identical pieces from the same file) and the number of **build plates**. The labour time follows automatically.
+4. **Settings** (at the bottom, collapsed): add and edit printers and materials, electricity price, hourly wage, profit margin, support surcharge, wall thickness and the labour rules.
 
-Drucker, Material, Schichthöhe, Füllung und Stützen werden gemerkt und beim nächsten Mal vorausgewählt. Stückzahl und Druckplatten gelten nur für das aktuelle Modell: Jedes neue Modell beginnt wieder mit 1 Stück auf 1 Platte.
+Printer, material, layer height, infill and supports are remembered and preselected next time. Quantity and build plates belong to the current model: every new model starts again with 1 piece on 1 plate.
 
-## So wird gerechnet
+**Language:** switch between German and English with **DE | EN** in the top right corner. The choice is stored with the settings. On the very first start it picks German or English based on your browser's language settings. Messages in the terminal are in German or English, depending on your system language and the language chosen on the page.
 
-| Schritt | Formel |
+## How the price is calculated
+
+| Step | Formula |
 |---|---|
-| Wände | min(Modellvolumen, Oberfläche × Wandstärke) |
-| Füllung | (Modellvolumen − Wände) × Füllung % |
-| Stützen | (Wände + Füllung) × Stützmaterial-Zuschlag % – nur wenn Stützstrukturen an sind |
-| Gewicht | Materialvolumen pro Stück × Stückzahl × Dichte |
-| Druckzeit | Materialvolumen pro Stück × Stückzahl ÷ (Durchsatz × Schichthöhe ÷ 0,2 mm) |
-| Materialkosten | Gewicht × Preis pro kg |
-| Stromkosten | Leistung × Druckzeit × Strompreis |
-| Verschleiß | Druckzeit × Verschleiß des Druckers (€ pro Druckstunde) |
-| Zeit pro Platte | Mindestzeit + (Höchstzeit − Mindestzeit) × Modellvolumen pro Platte ÷ „Höchstzeit ab“, höchstens die Höchstzeit, auf ganze Minuten gerundet |
-| Arbeit | (Versand + Druckplatten × Zeit pro Platte) × Stundenlohn |
-| **Verkaufspreis** | **(Material + Strom + Verschleiß + Arbeit) × (1 + Gewinnmarge %)** |
+| Walls | min(model volume, surface × wall thickness) |
+| Infill | (model volume − walls) × infill % |
+| Supports | (walls + infill) × support surcharge % – only with supports on |
+| Weight | material volume per piece × quantity × density |
+| Print time | material volume per piece × quantity ÷ (throughput × layer height ÷ 0.2 mm) |
+| Material | weight × price per kg |
+| Electricity | power × print time × electricity price |
+| Machine wear | print time × the printer's wear cost (€ per print hour) |
+| Time per plate | minimum + (maximum − minimum) × model volume per plate ÷ "maximum from", at most the maximum, rounded to whole minutes |
+| Labour | (shipping + build plates × time per plate) × hourly wage |
+| **Retail price** | **(material + electricity + wear + labour) × (1 + profit margin %)** |
 
-Die **Wände** (Außenwände, Boden, Deckel) werden immer voll gedruckt, die Füllung nur anteilig. Deshalb bestehen kleine Modelle überwiegend aus Wand, große überwiegend aus Füllung.
+The **walls** (perimeters, bottom and top) are always printed solid, the infill only partly. Small models are therefore mostly walls, large ones mostly infill.
 
-Der **Durchsatz** eines Druckers gilt für 0,2 mm Schichthöhe. Dünnere Schichten fördern weniger Material pro Stunde und dauern entsprechend länger.
+A printer's **throughput** is given for 0.2 mm layers. Thinner layers move less material per hour and take correspondingly longer.
 
-Die **Arbeitszeit** wird automatisch berechnet:
+**Labour** is calculated automatically:
 
-- **Versand:** einmal pro Auftrag, Standard 6 min.
-- **Pro Druckplatte:** Zeit zum Abnehmen und Nacharbeiten, Standard 3 bis 15 min. Sie richtet sich nach dem Modellvolumen auf der Platte (Volumen × Stück pro Platte). Ab 500 cm³ pro Platte gilt die Höchstzeit.
+- **Shipping:** once per order, 6 min by default.
+- **Per build plate:** time for removing and finishing the parts, 3 to 15 min by default. It depends on the model volume on the plate (volume × pieces per plate); from 500 cm³ per plate the maximum applies.
 
-Alle vier Werte lassen sich in den Grundeinstellungen unter „Arbeitszeit“ ändern. Bezahlt wird die Arbeit mit dem **Stundenlohn** (Standard 14,00 €/h).
+All four values can be changed under *Settings → Labour*. Labour is paid at the **hourly wage** (default €14.00/h).
 
-Den **Verschleiß** (Düse, Riemen, Druckplatte, Abschreibung) hat jeder Drucker selbst als Betrag pro Druckstunde (Standard 0,25 €/h). Die **Gewinnmarge** kommt auf alle Kosten drauf, also auch auf Arbeit und Verschleiß.
+Every printer has its own **machine wear** cost per print hour – nozzle, belts, build plate, depreciation (default €0.25/h). The **profit margin** is added on top of all costs, including labour and wear.
 
-Der **Verkaufspreis** ist der exakte Wert, auf den Cent gerundet. Die Aufschlüsselung ist so gerundet, dass sie genau auf diesen Preis aufgeht. Unter „Rechenweg anzeigen“ stehen alle Zwischenwerte.
+The **retail price** is the exact value rounded to the cent; the breakdown is rounded so that it adds up to exactly that price. *Show calculation* lists every intermediate value.
 
-Beispiel mit den Standardwerten: Der 20-mm-Testwürfel hat 8 cm³ Volumen und 24 cm² Oberfläche.
+Example with the default settings – the 20 mm test cube has 8 cm³ volume and 24 cm² surface:
 
-- Wände: 24 cm² × 0,08 cm = 1,92 cm³
-- Füllung: 6,08 cm³ × 15 % = 0,91 cm³
-- Gewicht: 2,83 cm³ × 1,24 g/cm³ = 3,5 g, kostet bei PLA zu 20 €/kg 0,070 €
-- Druckzeit: 2,83 cm³ ÷ 20 cm³/h ≈ 8 min (0,14 h)
-  - Strom: 100 W → 0,014 kWh = 0,005 €
-  - Verschleiß: 0,14 h × 0,25 €/h = 0,035 €
-- Arbeit: 6 min Versand + 1 Platte × 3 min (nur 8 cm³ auf der Platte) = 9 min × 14 €/h = 2,10 €
-- Preis: (0,070 € + 0,005 € + 0,035 € + 2,10 €) × 1,5 = **3,32 €**
+- Walls: 24 cm² × 0.08 cm = 1.92 cm³
+- Infill: 6.08 cm³ × 15% = 0.91 cm³
+- Weight: 2.83 cm³ × 1.24 g/cm³ = 3.5 g, which costs €0.070 at €20/kg PLA
+- Print time: 2.83 cm³ ÷ 20 cm³/h ≈ 8 min (0.14 h)
+  - Electricity: 100 W → 0.014 kWh = €0.005
+  - Machine wear: 0.14 h × €0.25/h = €0.035
+- Labour: 6 min shipping + 1 plate × 3 min (only 8 cm³ on the plate) = 9 min × €14/h = €2.10
+- Price: (€0.070 + €0.005 + €0.035 + €2.10) × 1.5 = **€3.32**
 
-Derselbe Würfel 10-mal auf 2 Platten: 40 cm³ pro Platte ergeben 4 min pro Platte, also 6 + 2 × 4 = 14 min Arbeit. Mit dem zehnfachen Material kostet das **6,56 €**, rund 0,66 € pro Stück.
+The same cube 10 times on 2 plates: 40 cm³ per plate gives 4 min per plate, so 6 + 2 × 4 = 14 min of labour. With ten times the material that costs **€6.56**, about €0.66 per piece.
 
-Bei kleinen Drucken macht die Arbeitszeit also den größten Teil des Preises aus.
+For small prints, labour is therefore the largest part of the price.
 
-### Drucker-Werte ermitteln
+### Finding your printer's values
 
-- **Durchsatz (cm³/h):** Den Slicer einen typischen Druck bei 0,2 mm schneiden lassen. Beispiel: 50 g PLA in 2 h 30 min ergibt 50 ÷ 1,24 = 40,3 cm³, geteilt durch 2,5 h = **16 cm³/h**.
-- **Leistung (W):** Mit einem Steckdosen-Messgerät messen, kWh eines Drucks ÷ Druckstunden × 1000. Beispiel: 0,25 kWh in 2,5 h = **100 W**.
-- **Verschleiß (€/h):** (Druckerpreis + Ersatzteile über die Lebensdauer) ÷ erwartete Druckstunden. Beispiel: (800 € + 400 €) ÷ 5000 h = **0,24 €/h**.
+- **Throughput (cm³/h):** slice a typical print at 0.2 mm. Example: 50 g of PLA in 2 h 30 min is 50 ÷ 1.24 = 40.3 cm³, divided by 2.5 h = **16 cm³/h**.
+- **Power (W):** measure with a plug-in power meter: kWh of a print ÷ print hours × 1000. Example: 0.25 kWh in 2.5 h = **100 W**.
+- **Wear (€/h):** (printer price + spare parts over its lifetime) ÷ expected print hours. Example: (€800 + €400) ÷ 5000 h = **€0.24/h**.
 
-### Grenzen der Schätzung
+### Limits of the estimate
 
-- Aufheizen, Brim, Spülmaterial und Fehldrucke sind nicht eingerechnet. Das deckt die Gewinnmarge ab.
-- Modelle müssen in Millimetern vorliegen (bei 3MF wird die Einheit der Datei umgerechnet).
-- Ist ein Modell nicht geschlossen (Löcher), erscheint eine Warnung, weil das Volumen dann ungenau ist.
+- Heating up, brims, purge material and failed prints are not included – the profit margin covers them.
+- Prices are calculated in euros.
+- Models must be in millimeters (3MF files are converted from their own unit).
+- If a model is not closed (holes), a warning appears, because its volume is then inaccurate.
 
-## Wo die Einstellungen gespeichert sind
+## Where the settings are stored
 
-Alles liegt als JSON auf der Festplatte im Ordner **`data/`** des Projekts. Der Ordner wird beim ersten Start angelegt:
+Everything is stored as JSON on disk, in the project's **`data/`** folder. It is created on the first start:
 
-| Datei | Inhalt |
+| File | Contents |
 |---|---|
-| `data/settings.json` | Drucker (mit Verschleiß), Materialien, Strompreis, Stundenlohn, Gewinnmarge, Stützmaterial-Zuschlag, Wandstärke, Regeln für die Arbeitszeit |
-| `data/last-print.json` | zuletzt verwendeter Drucker, Material, Schichthöhe, Füllung und Stützen |
+| `data/settings.json` | language, printers (with wear), materials, electricity price, hourly wage, profit margin, support surcharge, wall thickness, labour rules |
+| `data/last-print.json` | last used printer, material, layer height, infill and supports |
 
-Einstellungsdateien aus einer älteren Version werden beim Start automatisch mit den Standardwerten ergänzt: Stundenlohn, Verschleiß und Arbeitszeit-Regeln. Eine früher von Hand gewählte Arbeitszeit fällt weg, weil sie jetzt automatisch berechnet wird.
+Because the local server writes these files (not the browser), your settings survive reloading the page, restarting the computer, clearing browser data and switching browsers. The page shows the exact path under *Settings*.
 
-Weil der lokale Server diese Dateien schreibt (und nicht der Browser), bleiben die Einstellungen erhalten nach Neuladen, Neustart des Computers, Löschen der Browserdaten und beim Wechsel in einen anderen Browser. Den genauen Pfad zeigt auch die Seite unter „Grundeinstellungen“.
-
-- **Backup:** den Ordner `data/` kopieren.
-- **Wiederherstellen:** Preisrechner beenden, die Dateien zurück nach `data/` kopieren, neu starten.
-- **Anderer Speicherort:** `DATA_DIR=/pfad/zum/ordner npm start`
-- **Beschädigte Datei** (z. B. von Hand falsch bearbeitet): Sie wird als `settings.json.defekt-…` aufbewahrt, es gelten wieder die Standardwerte, und die Seite zeigt einen Hinweis.
+- **Backup:** copy the `data/` folder.
+- **Restore:** stop the calculator, copy the files back into `data/`, start it again.
+- **Different location:** `DATA_DIR=/path/to/folder npm start`
+- **Settings from an older version** are completed with the default values automatically and keep the German interface until you switch.
+- **Damaged file** (e.g. after a manual edit): it is kept as `settings.json.broken-…`, the default values apply again and the page shows a notice.
 
 ## Tests
 
@@ -139,42 +148,44 @@ Weil der lokale Server diese Dateien schreibt (und nicht der Browser), bleiben d
 npm test
 ```
 
-Die Tests prüfen:
+The tests cover:
 
-- **Rechnung:** 20-mm-Würfel mit 0 % und 100 % Füllung, mit und ohne Stützen, 0 % Marge, zwei Drucker mit unterschiedlicher Leistung und unterschiedlichem Durchsatz, Stückzahl und Druckplatten, automatische Arbeitszeit (Versand + 3–15 min pro Platte), Verschleiß, Rundung und die Beispiele oben
-- **Einlesen:** STL (Binär und Text), OBJ, 3MF (Einheiten, Transformationen, Bambu-Studio-Aufbau) sowie kaputte und nicht unterstützte Dateien
-- **Speicherung:** Werte überstehen einen Neustart, beschädigte Dateien werden aufbewahrt
-- **Server:** API, Schutz vor Zugriffen von fremden Webseiten
+- **Calculation:** the 20 mm cube with 0% and 100% infill, with and without supports, 0% margin, two printers with different power and throughput, quantity and build plates, automatic labour, machine wear, rounding and the examples above
+- **Reading models:** STL (binary and text), OBJ, 3MF (units, transforms, Bambu Studio projects) and broken or unsupported files
+- **Storage:** values survive a restart, damaged files are kept, older settings are migrated
+- **Server:** API, protection against requests from other websites, answers in the requested language
+- **Languages:** German and English contain the same texts, and every text the app uses exists
 
-Beispielmodelle zum Ausprobieren liegen in `test-models/` (neu erzeugen mit `npm run test-models`):
+Sample models to try are in `test-models/` (recreate them with `npm run test-models`):
 
-| Datei | Erwartung |
+| File | Expected result |
 |---|---|
-| `wuerfel-20mm.stl`, `wuerfel-20mm-ascii.stl`, `wuerfel-20mm.3mf` | 20 × 20 × 20 mm, 8,00 cm³ |
-| `zylinder-d20-h40.stl` | Ø 20 × 40 mm, 12,56 cm³ |
-| `quader-60x40x10mm.obj` | 60 × 40 × 10 mm, 24,00 cm³ |
-| `hohlwuerfel-40mm.stl` | 40 × 40 × 40 mm mit Hohlraum, 37,00 cm³ |
-| `defekt-abgeschnitten.stl`, `kein-modell.stl`, `defekt.3mf`, `nicht-unterstuetzt.step` | jeweils eine verständliche Fehlermeldung |
+| `cube-20mm.stl`, `cube-20mm-ascii.stl`, `cube-20mm.3mf` | 20 × 20 × 20 mm, 8.00 cm³ |
+| `cylinder-d20-h40.stl` | Ø 20 × 40 mm, 12.56 cm³ |
+| `box-60x40x10mm.obj` | 60 × 40 × 10 mm, 24.00 cm³ |
+| `hollow-cube-40mm.stl` | 40 × 40 × 40 mm with a cavity, 37.00 cm³ |
+| `broken-truncated.stl`, `not-a-model.stl`, `broken.3mf`, `unsupported.step` | a clear error message each |
 
-## Aufbau
+## Project structure
 
 ```
-server.js            Startpunkt (lokaler Webserver)
-start.command        Start per Doppelklick (macOS)
-src/                 Server: API und Speicherung der Einstellungen
-public/              Oberfläche (HTML, CSS, JavaScript)
-public/lib/calc.js   Preisberechnung
-public/lib/mesh.js   Einlesen von STL, 3MF und OBJ
-scripts/             Beispielmodelle erzeugen, Autostart (macOS)
-test/                Tests
-test-models/         Beispielmodelle
-data/                deine Einstellungen (wird beim ersten Start angelegt, nicht in Git)
+server.js            entry point (local web server)
+start.command        start by double-click (macOS)
+src/                 server: API and settings storage
+public/              user interface (HTML, CSS, JavaScript)
+public/lib/calc.js   price calculation
+public/lib/mesh.js   reading STL, 3MF and OBJ
+public/lib/i18n.js   German and English texts
+scripts/             sample models, autostart (macOS)
+test/                tests
+test-models/         sample models
+data/                your settings (created on the first start, not in Git)
 ```
 
-## Datenschutz
+## Privacy
 
-Der Rechner läuft nur auf deinem Computer und ist nur dort erreichbar (127.0.0.1). Modelle werden im Browser gelesen und nirgendwohin hochgeladen. Einstellungen landen ausschließlich in `data/`, das nicht in Git eingecheckt wird. Es gibt keine externen Abhängigkeiten, kein Tracking und keine Verbindungen ins Internet.
+The calculator runs only on your computer and is only reachable there (127.0.0.1). Models are read in the browser and uploaded nowhere. Settings are written only to `data/`, which is not checked into Git. There are no external dependencies, no tracking and no connections to the internet.
 
-## Lizenz
+## License
 
 [MIT](LICENSE)
