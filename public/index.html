@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>FDM-Preisrechner</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1 class="brand">
+        <img src="favicon.svg" alt="" width="28" height="28">
+        <span>FDM-Preisrechner</span>
+      </h1>
+      <button type="button" class="btn btn-ghost" id="settings-shortcut" aria-controls="settings-details">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+        <span>Grundeinstellungen</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="page">
+    <p class="boot-message" id="boot-message">
+      Der Preisrechner lädt nicht? Starte ihn im Projektordner mit <code>npm start</code>
+      und öffne dann <code>http://localhost:3141</code>.
+    </p>
+    <div class="banner banner-error" id="app-error" role="alert" hidden></div>
+    <div class="banner banner-warning" id="app-warnings" role="status" hidden></div>
+
+    <main class="layout" id="layout" inert>
+      <div class="main-column">
+        <!-- Per-print settings: change with every print -->
+        <section class="panel job" aria-labelledby="job-heading">
+          <div class="panel-header">
+            <h2 id="job-heading">Aktueller Druck</h2>
+            <p>Gilt für diesen Druck und wird als Startwert für den nächsten gemerkt.</p>
+          </div>
+
+          <div class="step">
+            <h3 class="step-title"><span class="step-number" aria-hidden="true">1</span>Modell</h3>
+            <input type="file" id="file-input" accept=".stl,.3mf,.obj" class="visually-hidden" tabindex="-1" aria-hidden="true">
+            <button type="button" class="dropzone" id="dropzone">
+              <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 14v4.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14"/></svg>
+              <span class="dropzone-title" id="dropzone-title"><strong>Modell hierher ziehen</strong> oder klicken zum Auswählen</span>
+              <span class="dropzone-hint">STL, 3MF oder OBJ · Maße in Millimetern</span>
+            </button>
+            <p class="model-loading" id="model-loading" role="status" hidden></p>
+            <div class="alert alert-error" id="model-error" role="alert" hidden></div>
+            <div class="model-info" id="model-info" hidden>
+              <div class="model-head">
+                <span class="model-name" id="model-name"></span>
+                <span class="badge" id="model-format"></span>
+              </div>
+              <dl class="model-stats">
+                <div><dt>Abmessungen (X × Y × Z)</dt><dd id="model-size"></dd></div>
+                <div><dt>Volumen</dt><dd id="model-volume"></dd></div>
+                <div><dt>Oberfläche</dt><dd id="model-area"></dd></div>
+                <div><dt>Dreiecke</dt><dd id="model-triangles"></dd></div>
+              </dl>
+              <ul class="notice-list" id="model-warnings" hidden></ul>
+            </div>
+          </div>
+
+          <div class="step">
+            <h3 class="step-title"><span class="step-number" aria-hidden="true">2</span>Drucker &amp; Material</h3>
+            <div class="field-grid">
+              <div class="field">
+                <label for="printer-select">Drucker</label>
+                <select id="printer-select" aria-describedby="printer-hint"></select>
+                <p class="field-hint" id="printer-hint"></p>
+              </div>
+              <div class="field">
+                <label for="material-select">Material</label>
+                <select id="material-select" aria-describedby="material-hint"></select>
+                <p class="field-hint" id="material-hint"></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="step">
+            <h3 class="step-title"><span class="step-number" aria-hidden="true">3</span>Druckeinstellungen</h3>
+            <div class="field">
+              <label for="layer-height">Schichthöhe</label>
+              <div class="control-row">
+                <div class="chips" id="layer-chips" role="group" aria-label="Schichthöhe schnell wählen">
+                  <button type="button" class="chip" data-value="0.08">0,08</button>
+                  <button type="button" class="chip" data-value="0.12">0,12</button>
+                  <button type="button" class="chip" data-value="0.16">0,16</button>
+                  <button type="button" class="chip" data-value="0.2">0,20</button>
+                  <button type="button" class="chip" data-value="0.24">0,24</button>
+                  <button type="button" class="chip" data-value="0.28">0,28</button>
+                </div>
+                <div class="input-unit input-narrow">
+                  <input id="layer-height" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="layer-height-error">
+                  <span class="unit">mm</span>
+                </div>
+              </div>
+              <p class="field-error" id="layer-height-error"></p>
+            </div>
+            <div class="field">
+              <label for="infill">Füllung (Infill)</label>
+              <div class="control-row">
+                <input type="range" id="infill-range" min="0" max="100" step="1" aria-label="Füllung in Prozent">
+                <div class="input-unit input-narrow">
+                  <input id="infill" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="infill-error">
+                  <span class="unit">%</span>
+                </div>
+              </div>
+              <p class="field-error" id="infill-error"></p>
+            </div>
+            <div class="field">
+              <label class="switch">
+                <input type="checkbox" id="support" role="switch">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                <span class="switch-label">Stützstrukturen</span>
+                <span class="switch-hint" id="support-hint"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="step">
+            <h3 class="step-title"><span class="step-number" aria-hidden="true">4</span>Menge &amp; Arbeitszeit</h3>
+            <div class="field-grid job-grid">
+              <div class="field">
+                <label for="object-count">Stückzahl</label>
+                <div class="stepper">
+                  <button type="button" class="stepper-btn" data-target="object-count" data-delta="-1" aria-label="Ein Stück weniger">−</button>
+                  <input id="object-count" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="object-count-error">
+                  <button type="button" class="stepper-btn" data-target="object-count" data-delta="1" aria-label="Ein Stück mehr">+</button>
+                </div>
+                <p class="field-error" id="object-count-error"></p>
+              </div>
+              <div class="field">
+                <label for="plate-count">Druckplatten</label>
+                <div class="stepper">
+                  <button type="button" class="stepper-btn" data-target="plate-count" data-delta="-1" aria-label="Eine Platte weniger">−</button>
+                  <input id="plate-count" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="plate-count-error">
+                  <button type="button" class="stepper-btn" data-target="plate-count" data-delta="1" aria-label="Eine Platte mehr">+</button>
+                </div>
+                <p class="field-error" id="plate-count-error"></p>
+              </div>
+            </div>
+            <p class="field-hint">Gilt für das aktuelle Modell – ein neues Modell beginnt wieder mit 1 Stück auf 1 Platte.</p>
+            <div class="labour-box" id="labour-box" aria-live="polite">
+              <span class="labour-title">Arbeitszeit (automatisch)</span>
+              <span class="labour-total" id="labour-total"></span>
+              <span class="labour-detail" id="labour-detail"></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Long-term settings: rarely changed, stored on disk by the local server -->
+        <section class="panel settings" id="settings" aria-labelledby="settings-heading">
+          <details id="settings-details">
+            <summary>
+              <svg class="summary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+              <span class="summary-text">
+                <span class="summary-title" id="settings-heading">Grundeinstellungen</span>
+                <span class="summary-sub">Drucker, Materialien und Kosten – selten geändert, dauerhaft gespeichert</span>
+              </span>
+              <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </summary>
+
+            <div class="settings-body">
+              <section class="settings-group" aria-labelledby="printers-heading">
+                <div class="group-header">
+                  <h3 id="printers-heading">Drucker</h3>
+                  <button type="button" class="btn btn-small" id="add-printer">+ Drucker</button>
+                </div>
+                <p class="group-hint">
+                  <strong>Leistung</strong>: durchschnittliche Leistungsaufnahme während des Drucks.
+                  <strong>Durchsatz</strong>: Material pro Stunde bei 0,2&nbsp;mm Schichthöhe, gemittelt über einen ganzen Druck –
+                  z.&nbsp;B. aus dem Slicer: Filamentvolumen ÷ Druckzeit.
+                  <strong>Verschleiß</strong>: Abnutzung pro Druckstunde (Düse, Riemen, Druckplatte, Abschreibung) –
+                  grob: (Druckerpreis + Ersatzteile) ÷ erwartete Druckstunden.
+                </p>
+                <div class="item-list" id="printer-list"></div>
+              </section>
+
+              <section class="settings-group" aria-labelledby="materials-heading">
+                <div class="group-header">
+                  <h3 id="materials-heading">Materialien</h3>
+                  <button type="button" class="btn btn-small" id="add-material">+ Material</button>
+                </div>
+                <p class="group-hint">Typische Dichten: PLA 1,24 · PETG 1,27 · ABS 1,04 · ASA 1,07 · TPU 1,21 g/cm³.</p>
+                <div class="item-list" id="material-list"></div>
+              </section>
+
+              <section class="settings-group" aria-labelledby="costs-heading">
+                <div class="group-header">
+                  <h3 id="costs-heading">Kosten &amp; Kalkulation</h3>
+                  <span class="save-state" id="general-save-state" aria-live="polite"></span>
+                </div>
+                <div class="field-grid general-grid">
+                  <div class="field">
+                    <label for="g-electricityPricePerKwh">Strompreis</label>
+                    <div class="input-unit">
+                      <input id="g-electricityPricePerKwh" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
+                      <span class="unit">€/kWh</span>
+                    </div>
+                    <p class="field-hint">Arbeitspreis deines Stromtarifs</p>
+                    <p class="field-error"></p>
+                  </div>
+                  <div class="field">
+                    <label for="g-wagePerHour">Stundenlohn</label>
+                    <div class="input-unit">
+                      <input id="g-wagePerHour" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
+                      <span class="unit">€/h</span>
+                    </div>
+                    <p class="field-hint">für die Arbeitszeit, z.&nbsp;B. Mindestlohn</p>
+                    <p class="field-error"></p>
+                  </div>
+                  <div class="field">
+                    <label for="g-profitMarginPercent">Gewinnmarge</label>
+                    <div class="input-unit">
+                      <input id="g-profitMarginPercent" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
+                      <span class="unit">%</span>
+                    </div>
+                    <p class="field-hint">Aufschlag auf alle Kosten (Material, Strom, Verschleiß, Arbeit)</p>
+                    <p class="field-error"></p>
+                  </div>
+                  <div class="field field-wide">
+                    <label for="g-supportSurchargePercent">Stützmaterial-Zuschlag</label>
+                    <div class="input-unit">
+                      <input id="g-supportSurchargePercent" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
+                      <span class="unit">%</span>
+                    </div>
+                    <p class="field-hint">Mehr Material, wenn Stützstrukturen an sind</p>
+                    <p class="field-error"></p>
+                  </div>
+                  <div class="field field-wide">
+                    <label for="g-wallThicknessMm">Wandstärke</label>
+                    <div class="input-unit">
+                      <input id="g-wallThicknessMm" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
+                      <span class="unit">mm</span>
+                    </div>
+                    <p class="field-hint">Wände + Boden/Deckel, ergibt den Wandanteil</p>
+                    <p class="field-error"></p>
+                  </div>
+                </div>
+              </section>
+
+              <section class="settings-group" aria-labelledby="labour-heading">
+                <div class="group-header">
+                  <h3 id="labour-heading">Arbeitszeit</h3>
+                  <span class="save-state" aria-live="polite"></span>
+                </div>
+                <p class="group-hint">
+                  Pro Auftrag fällt einmal die <strong>Versandzeit</strong> an. Dazu kommt <strong>pro Druckplatte</strong>
+                  Zeit zum Abnehmen und Nacharbeiten: von der Mindest- bis zur Höchstzeit, je nach Modellvolumen auf der Platte
+                  (Volumen × Stück pro Platte), auf ganze Minuten gerundet.
+                </p>
+                <div class="field-grid labour-grid">
+                  <div class="field">
+                    <label for="g-shippingMinutes">Versand</label>
+                    <div class="input-unit">
+                      <input id="g-shippingMinutes" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
+                      <span class="unit">min</span>
+                    </div>
+                    <p class="field-hint">fix pro Auftrag</p>
+                    <p class="field-error"></p>
+                  </div>
+                  <div class="field">
+                    <label for="g-plateMinutesMin">Pro Platte mindestens</label>
+                    <div class="input-unit">
+                      <input id="g-plateMinutesMin" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
+                      <span class="unit">min</span>
+                    </div>
+                    <p class="field-hint">kleines Modell</p>
+                    <p class="field-error"></p>
+                  </div>
+                  <div class="field">
+                    <label for="g-plateMinutesMax">Pro Platte höchstens</label>
+                    <div class="input-unit">
+                      <input id="g-plateMinutesMax" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
+                      <span class="unit">min</span>
+                    </div>
+                    <p class="field-hint">volle Platte</p>
+                    <p class="field-error"></p>
+                  </div>
+                  <div class="field">
+                    <label for="g-fullPlateVolumeCm3">Höchstzeit ab</label>
+                    <div class="input-unit">
+                      <input id="g-fullPlateVolumeCm3" type="text" inputmode="decimal" autocomplete="off" spellcheck="false">
+                      <span class="unit">cm³</span>
+                    </div>
+                    <p class="field-hint">Modellvolumen pro Platte</p>
+                    <p class="field-error"></p>
+                  </div>
+                </div>
+              </section>
+
+              <p class="storage-note">
+                Gespeichert auf diesem Computer in <code id="storage-path">data/settings.json</code> –
+                unabhängig vom Browser, also auch nach dem Löschen der Browserdaten oder in einem anderen Browser vorhanden.
+              </p>
+            </div>
+          </details>
+        </section>
+      </div>
+
+      <aside class="side-column" aria-label="Ergebnis">
+        <section class="price-card" aria-labelledby="price-heading">
+          <h2 class="price-label" id="price-heading">Verkaufspreis</h2>
+          <p class="price is-empty" id="price" aria-live="polite" aria-atomic="true">– €</p>
+          <p class="price-each" id="price-each" hidden></p>
+          <p class="price-sub" id="price-sub">Lade ein Modell hoch, um den Preis zu berechnen.</p>
+          <dl class="breakdown">
+            <div class="row"><dt>Gewicht (geschätzt)</dt><dd id="r-weight">–</dd></div>
+            <div class="row"><dt>Druckzeit (geschätzt)</dt><dd id="r-time">–</dd></div>
+            <div class="row row-group-start"><dt>Materialkosten</dt><dd id="r-material">–</dd></div>
+            <div class="row"><dt>Stromkosten</dt><dd id="r-electricity">–</dd></div>
+            <div class="row"><dt>Verschleiß</dt><dd id="r-wear">–</dd></div>
+            <div class="row"><dt>Arbeitszeit</dt><dd id="r-labour">–</dd></div>
+            <div class="row"><dt id="r-profit-label">Gewinn</dt><dd id="r-profit">–</dd></div>
+          </dl>
+          <details class="explain" id="explain" hidden>
+            <summary>Rechenweg anzeigen</summary>
+            <ol id="explain-list"></ol>
+          </details>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

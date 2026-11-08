@@ -1,0 +1,32 @@
+{
+  "name": "fdm-preisrechner",
+  "version": "1.0.0",
+  "description": "Lokaler Preisrechner für FDM-3D-Drucke (STL, 3MF, OBJ): Material, Strom, Verschleiß, Arbeitszeit und Marge",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JakobFPV/fdm-preisrechner.git"
+  },
+  "keywords": [
+    "3d-printing",
+    "fdm",
+    "price-calculator",
+    "stl",
+    "3mf",
+    "obj"
+  ],
+  "scripts": {
+    "start": "node server.js --open",
+    "serve": "node server.js",
+    "test": "node --test test/*.test.js",
+    "test-models": "node scripts/make-test-models.js",
+    "autostart:install": "node scripts/autostart.js install",
+    "autostart:uninstall": "node scripts/autostart.js uninstall",
+    "autostart:status": "node scripts/autostart.js status"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

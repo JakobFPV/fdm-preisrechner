@@ -1,0 +1,10 @@
+# Persönliche Einstellungen (Drucker, Materialien, Kosten) – nie veröffentlichen, separat sichern
+data/
+
+# Editor-/Werkzeug-Einstellungen und Systemdateien
+.claude/
+.vscode/
+.idea/
+.DS_Store
+*.log
+node_modules/
